@@ -1,0 +1,6 @@
+{
+  "name": "HUB CAFE System",
+  "description": "نظام إدارة وتشغيل الكافيهات المتكامل - نقطة بيع POS، ترابيزات، بلايستيشن، مخزون، ورديات وتقارير محاسبية شاملة مع اختبارات آلية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom scrollbar for POS and orders */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1ebd9;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4c5b1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a9967e;
+}
+
+/* ================= PRINTING SYSTEM (A4 & THERMAL RECEIPT) ================= */
+@media print {
+  /* Prevent clipping and multi-page truncation */
+  html, body, #root, main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    background: white !important;
+    color: #111 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide all non-printable elements */
+  .no-print,
+  header,
+  aside,
+  nav,
+  button:not(.allow-print),
+  .notification-toast-container,
+  .notification-panel-backdrop {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure printable elements are always visible during print */
+  .printable-a4-document,
+  .printable-thermal-document,
+  .printable-receipt {
+    display: block !important;
+    visibility: visible !important;
+    position: relative !important;
+  }
+
+  /* Specific A4 Document Print Formatting */
+  .printable-a4-document {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 12mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: #1a1a1a !important;
+    page-break-inside: auto;
+  }
+
+  .printable-a4-document * {
+    visibility: visible !important;
+  }
+
+  /* Ensure logo images are properly sized in print */
+  .printable-a4-document img,
+  .printable-thermal-document img,
+  .printable-receipt img {
+    max-width: 100% !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  /* Override hidden class for printable elements */
+  .printable-a4-document.hidden,
+  .printable-thermal-document.hidden,
+  .printable-receipt.hidden {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  /* Specific Thermal Receipt (80mm) Print Formatting */
+  .printable-thermal-document {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 3mm 4mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: #000 !important;
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    page-break-inside: auto;
+  }
+
+  .printable-thermal-document * {
+    visibility: visible !important;
+  }
+
+  /* General Printable Receipt for POS Modal */
+  .printable-receipt {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 4mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: #000 !important;
+    font-size: 11px !important;
+  }
+
+  .printable-receipt * {
+    visibility: visible !important;
+  }
+
+  /* Hide elements that should not be printed when specific format is active */
+  .print-format-a4 .printable-thermal-document,
+  .print-format-thermal .printable-a4-document {
+    display: none !important;
+  }
+
+  /* Avoid break inside tables & cards */
+  .avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Rule for hiding documents not currently active for print */
+  .hide-when-printing {
+    display: none !important;
+  }
+}
