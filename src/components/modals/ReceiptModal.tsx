@@ -8,7 +8,129 @@ export const ReceiptModal: React.FC = () => {
   if (!activeReceipt) return null;
 
   const handlePrint = () => {
-    window.print();
+    // Hide all elements except the printable receipt
+    const printContent = document.querySelector('.printable-receipt');
+    if (!printContent) return;
+
+    // Create a new window for printing
+    const printWindow = window.open('', '', 'width=400,height=600');
+    if (!printWindow) return;
+
+    // Copy the printable content to the new window
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Receipt - ${cafeSettings.cafeName}</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.35;
+            color: #000;
+            background: white;
+            padding: 4mm;
+            width: 76mm;
+          }
+          .printable-receipt {
+            width: 100%;
+            text-align: center;
+          }
+          .border-t, .border-b {
+            border-top: 1px dashed #000;
+            border-bottom: 1px dashed #000;
+            padding: 2px 0;
+          }
+          .font-black {
+            font-weight: bold;
+          }
+          .text-xs {
+            font-size: 10px;
+          }
+          .text-[10px] {
+            font-size: 9px;
+          }
+          .text-[9px] {
+            font-size: 8px;
+          }
+          .space-y-1 > * + * {
+            margin-top: 4px;
+          }
+          .space-y-2 > * + * {
+            margin-top: 8px;
+          }
+          .space-y-4 > * + * {
+            margin-top: 16px;
+          }
+          .flex {
+            display: flex;
+          }
+          .justify-between {
+            justify-content: space-between;
+          }
+          .items-start {
+            align-items: flex-start;
+          }
+          .max-w-[130px] {
+            max-width: 130px;
+          }
+          .text-start {
+            text-align: start;
+          }
+          .text-emerald-800 {
+            color: #065f46;
+          }
+          .font-mono {
+            font-family: monospace;
+          }
+          .font-sans {
+            font-family: sans-serif;
+          }
+          .pt-1 {
+            padding-top: 4px;
+          }
+          .pt-2 {
+            padding-top: 8px;
+          }
+          .pb-1 {
+            padding-bottom: 4px;
+          }
+          .py-2 {
+            padding-top: 8px;
+            padding-bottom: 8px;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+          }
+          @media print {
+            body {
+              width: 76mm;
+              margin: 0;
+              padding: 3mm 4mm;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        ${printContent.innerHTML}
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+
+    // Wait for content to load, then print
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   return (

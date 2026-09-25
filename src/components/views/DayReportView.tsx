@@ -22,7 +22,87 @@ export const DayReportView: React.FC = () => {
     }
     // Small timeout to allow state to settle before browser print dialog
     setTimeout(() => {
-      window.print();
+      // Get the printable content based on format
+      const printableSelector = format === 'thermal' ? '.printable-thermal-document' : '.printable-a4-document';
+      const printContent = document.querySelector(printableSelector);
+      if (!printContent) return;
+
+      // Create a new window for printing
+      const printWindow = window.open('', '', 'width=800,height=600');
+      if (!printWindow) return;
+
+      // Copy styles and content to the new window
+      const styles = Array.from(document.styleSheets)
+        .map(styleSheet => {
+          try {
+            return Array.from(styleSheet.cssRules)
+              .map(cssRule => cssRule.cssText)
+              .join('');
+          } catch (e) {
+            return '';
+          }
+        })
+        .join('');
+
+      // Set up the print window content
+      const width = format === 'thermal' ? '76mm' : '100%';
+      const padding = format === 'thermal' ? '3mm 4mm' : '10mm 12mm';
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>تقرير الإقفال اليومي - ${cafeSettings.cafeName}</title>
+          <meta charset="UTF-8">
+          <style>
+            ${styles}
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            body {
+              font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
+              background: white;
+              color: #111;
+              padding: ${padding};
+              width: ${width};
+              margin: 0 auto;
+            }
+            .printable-a4-document, .printable-thermal-document {
+              width: 100% !important;
+              display: block !important;
+              visibility: visible !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            @media print {
+              body {
+                width: ${width};
+                margin: 0;
+                padding: ${padding};
+              }
+              .printable-a4-document, .printable-thermal-document {
+                page-break-inside: auto;
+              }
+            }
+          </style>
+        </head>
+        <body dir="rtl">
+          ${printContent.innerHTML}
+        </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+      printWindow.focus();
+
+      // Wait for content to load, then print
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
     }, 150);
   };
 
