@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useCafe } from '../../context/CafeContext';
-import { 
-  Printer, ArrowRight, CheckCircle2, FileText, 
-  Receipt, Building2, Phone, MapPin, ShieldCheck, 
+import {
+  Printer, ArrowRight, CheckCircle2, FileText,
+  Receipt, Building2, Phone, MapPin, Shield,
   DollarSign, TrendingUp, CreditCard, Wallet, AlertTriangle,
   Gamepad2, Calendar, Clock, User
 } from 'lucide-react';

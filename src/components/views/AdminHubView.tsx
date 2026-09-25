@@ -732,7 +732,7 @@ export const AdminHubView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#423226] mb-1 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#8c6239]" />
+                  <Shield className="w-3.5 h-3.5 text-[#8c6239]" />
                   <span>رقم السجل التجاري (Commercial Reg)</span>
                 </label>
                 <input

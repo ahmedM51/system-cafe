@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useCafe } from '../../context/CafeContext';
-import { Clock, DollarSign, AlertCircle, CheckCircle2, ShieldCheck, User, Printer } from 'lucide-react';
+import { Clock, DollarSign, AlertCircle, CheckCircle2, Shield, User, Printer } from 'lucide-react';
 
 export const ShiftsView: React.FC = () => {
   const { currentShift, closeShift, openNewShift, currentUser, setActiveView, cafeSettings } = useCafe();
@@ -120,7 +120,7 @@ export const ShiftsView: React.FC = () => {
 
         {/* Handover Instructions */}
         <div className="bg-[#faf7f2] p-4 rounded-xl border border-[#ded3c3] flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-[#8c6239] shrink-0 mt-0.5" />
+          <Shield className="w-5 h-5 text-[#8c6239] shrink-0 mt-0.5" />
           <div className="text-xs text-[#5e4e42] leading-relaxed">
             <strong>قواعد الأمان وتسليم النقدية:</strong> يقوم الكاشير بعدّ العملات الورقية والمعدنية بدقة في نهاية الشيفت ومطابقتها مع المبلغ المفروض في الدرج. أي فرق (عجز أو زيادة) يتم تسجيله وإشعار المدير به فوراً.
           </div>
