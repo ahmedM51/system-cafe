@@ -14,6 +14,7 @@ import { OrdersView } from './components/views/OrdersView';
 import { TestingView } from './components/views/TestingView';
 import { LoginView } from './components/views/LoginView';
 import { AdminHubView } from './components/views/AdminHubView';
+import { DatabaseProjectLabView } from './components/views/DatabaseProjectLabView';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { AuthModal } from './components/modals/AuthModal';
 import { ProductEditModal } from './components/modals/ProductEditModal';
@@ -59,6 +60,8 @@ const AppContent: React.FC = () => {
         return <OrdersView />;
       case 'qa_tests':
         return <TestingView />;
+      case 'db_lab':
+        return <DatabaseProjectLabView />;
       default:
         return <PosView />;
     }

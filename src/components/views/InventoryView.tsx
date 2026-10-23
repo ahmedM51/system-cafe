@@ -121,7 +121,7 @@ export const InventoryView: React.FC = () => {
               className="w-full py-3.5 bg-[#6b4a36] hover:bg-[#54392a] text-white text-sm font-black rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center gap-2"
             >
               <Printer className="w-4 h-4" />
-              <span>طباعه التقرير</span>
+              <span>طباعة تقرير اليوم (A4 / طابعة فواتير)</span>
             </button>
           </div>
         </div>

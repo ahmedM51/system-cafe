@@ -4,7 +4,7 @@ import {
   CreditCard, LayoutGrid, ShoppingBag, Gamepad2, Clock,
   Package, ClipboardCheck, Truck, Receipt, LayoutDashboard,
   FileText, CheckCircle2, X, MoreHorizontal, Sparkles, Lock,
-  Shield, User, LogOut, KeyRound, Sliders, Coffee
+  Shield, User, LogOut, KeyRound, Sliders, Coffee, Database
 } from 'lucide-react';
 
 interface NavItem {
@@ -40,6 +40,7 @@ export const Sidebar: React.FC = () => {
       items: [
         { id: 'admin_hub', label: 'لوحة تحكم الإدارة الشاملة', icon: Sliders, highlight: true, adminOnly: true },
         { id: 'admin_products', label: 'المنيو والأسعار والصور', icon: Coffee, adminOnly: true },
+        { id: 'db_lab', label: 'معمل ومناقشة الداتا بيز (Mongo & Neo4j)', icon: Database, badge: 'مشروع العملي', badgeColor: 'bg-emerald-600 text-white', highlight: true },
       ],
     },
     {

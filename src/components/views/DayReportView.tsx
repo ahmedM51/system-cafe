@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useCafe } from '../../context/CafeContext';
-import {
-  Printer, ArrowRight, CheckCircle2, FileText,
-  Receipt, Building2, Phone, MapPin, Shield,
+import { 
+  Printer, ArrowRight, CheckCircle2, FileText, 
+  Receipt, Building2, Phone, MapPin, ShieldCheck, 
   DollarSign, TrendingUp, CreditCard, Wallet, AlertTriangle,
   Gamepad2, Calendar, Clock, User
 } from 'lucide-react';
@@ -22,87 +22,7 @@ export const DayReportView: React.FC = () => {
     }
     // Small timeout to allow state to settle before browser print dialog
     setTimeout(() => {
-      // Get the printable content based on format
-      const printableSelector = format === 'thermal' ? '.printable-thermal-document' : '.printable-a4-document';
-      const printContent = document.querySelector(printableSelector);
-      if (!printContent) return;
-
-      // Create a new window for printing
-      const printWindow = window.open('', '', 'width=800,height=600');
-      if (!printWindow) return;
-
-      // Copy styles and content to the new window
-      const styles = Array.from(document.styleSheets)
-        .map(styleSheet => {
-          try {
-            return Array.from(styleSheet.cssRules)
-              .map(cssRule => cssRule.cssText)
-              .join('');
-          } catch (e) {
-            return '';
-          }
-        })
-        .join('');
-
-      // Set up the print window content
-      const width = format === 'thermal' ? '76mm' : '100%';
-      const padding = format === 'thermal' ? '3mm 4mm' : '10mm 12mm';
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>تقرير الإقفال اليومي - ${cafeSettings.cafeName}</title>
-          <meta charset="UTF-8">
-          <style>
-            ${styles}
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
-              background: white;
-              color: #111;
-              padding: ${padding};
-              width: ${width};
-              margin: 0 auto;
-            }
-            .printable-a4-document, .printable-thermal-document {
-              width: 100% !important;
-              display: block !important;
-              visibility: visible !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            @media print {
-              body {
-                width: ${width};
-                margin: 0;
-                padding: ${padding};
-              }
-              .printable-a4-document, .printable-thermal-document {
-                page-break-inside: auto;
-              }
-            }
-          </style>
-        </head>
-        <body dir="rtl">
-          ${printContent.innerHTML}
-        </body>
-        </html>
-      `);
-
-      printWindow.document.close();
-      printWindow.focus();
-
-      // Wait for content to load, then print
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
+      window.print();
     }, 150);
   };
 
@@ -175,9 +95,9 @@ export const DayReportView: React.FC = () => {
       {/* ========================================================================= */}
       {/* 1. A4 REPORT FORMAT (Displayed and printed when printFormat === 'a4')     */}
       {/* ========================================================================= */}
-      <div
+      <div 
         className={`bg-white rounded-3xl border border-[#ded3c3] shadow-md p-8 md:p-12 text-[#231f1e] printable-a4-document ${
-          printFormat !== 'a4' ? 'hidden' : 'block'
+          printFormat !== 'a4' ? 'hidden print:hidden' : 'block'
         }`}
       >
         {/* Official Header */}
@@ -492,9 +412,9 @@ export const DayReportView: React.FC = () => {
       {/* ========================================================================= */}
       {/* 2. THERMAL RECEIPT 80MM (Displayed and printed when printFormat === 'thermal') */}
       {/* ========================================================================= */}
-      <div
+      <div 
         className={`bg-white rounded-3xl border border-[#ded3c3] shadow-md p-6 max-w-sm mx-auto text-[#231f1e] printable-thermal-document ${
-          printFormat !== 'thermal' ? 'hidden' : 'block'
+          printFormat !== 'thermal' ? 'hidden print:hidden' : 'block'
         }`}
       >
         <div className="font-mono text-center space-y-1.5">

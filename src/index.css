@@ -49,17 +49,10 @@
     visibility: hidden !important;
   }
 
-  /* Ensure printable elements are always visible during print */
-  .printable-a4-document,
-  .printable-thermal-document,
-  .printable-receipt {
-    display: block !important;
-    visibility: visible !important;
-    position: relative !important;
-  }
-
   /* Specific A4 Document Print Formatting */
   .printable-a4-document {
+    display: block !important;
+    visibility: visible !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
@@ -75,25 +68,10 @@
     visibility: visible !important;
   }
 
-  /* Ensure logo images are properly sized in print */
-  .printable-a4-document img,
-  .printable-thermal-document img,
-  .printable-receipt img {
-    max-width: 100% !important;
-    height: auto !important;
-    object-fit: contain !important;
-  }
-
-  /* Override hidden class for printable elements */
-  .printable-a4-document.hidden,
-  .printable-thermal-document.hidden,
-  .printable-receipt.hidden {
-    display: block !important;
-    visibility: visible !important;
-  }
-
   /* Specific Thermal Receipt (80mm) Print Formatting */
   .printable-thermal-document {
+    display: block !important;
+    visibility: visible !important;
     width: 76mm !important;
     max-width: 76mm !important;
     margin: 0 auto !important;
@@ -113,6 +91,8 @@
 
   /* General Printable Receipt for POS Modal */
   .printable-receipt {
+    display: block !important;
+    visibility: visible !important;
     width: 76mm !important;
     max-width: 76mm !important;
     margin: 0 auto !important;
@@ -126,12 +106,6 @@
 
   .printable-receipt * {
     visibility: visible !important;
-  }
-
-  /* Hide elements that should not be printed when specific format is active */
-  .print-format-a4 .printable-thermal-document,
-  .print-format-thermal .printable-a4-document {
-    display: none !important;
   }
 
   /* Avoid break inside tables & cards */

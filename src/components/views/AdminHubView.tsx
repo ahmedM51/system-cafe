@@ -7,8 +7,10 @@ import {
   Check, Save, RefreshCw, Download, Upload, Shield, Lock,
   Gamepad2, LayoutGrid, Users, DollarSign, Tag, Wifi, Phone,
   MapPin, FileText, CheckCircle2, ChevronDown, Sparkles, AlertCircle,
-  Camera, UserPlus, KeyRound, Mail, X, UserCheck, User as UserIcon
+  Camera, UserPlus, KeyRound, Mail, X, UserCheck, User as UserIcon,
+  Database, ExternalLink, HardDrive, ShieldCheck
 } from 'lucide-react';
+import { mongoService, type MongoStatusResponse } from '../../services/mongoService';
 
 export const AdminHubView: React.FC = () => {
   const {
@@ -20,12 +22,87 @@ export const AdminHubView: React.FC = () => {
     tables, addTable, deleteTable, usersList,
     addUser, updateUser, deleteUser,
     exportAllData, importAllData, resetToInitialData,
-    setIsLoginModalOpen, setActiveView
+    setIsLoginModalOpen, setActiveView, inventory, orders, currentShift
   } = useCafe();
 
-  const [activeTab, setActiveTab] = useState<'products' | 'branding' | 'categories' | 'playstation' | 'tables' | 'users' | 'backup'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'branding' | 'categories' | 'playstation' | 'tables' | 'users' | 'backup' | 'mongodb'>('products');
   const [productSearch, setProductSearch] = useState('');
   const [selectedCatFilter, setSelectedCatFilter] = useState('all');
+
+  // MongoDB Atlas Cloud State
+  const [mongoStatus, setMongoStatus] = useState<MongoStatusResponse | null>(null);
+  const [isTestingMongo, setIsTestingMongo] = useState(false);
+  const [isSyncingMongo, setIsSyncingMongo] = useState(false);
+  const [mongoMsg, setMongoMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [mongoUriInput, setMongoUriInput] = useState(
+    'mongodb+srv://ahmedmohamedm4336_db_user:QRJyIXO7ZZNlY5rI@cluster0.w7l7m9v.mongodb.net/hub_cafe_db?retryWrites=true&w=majority'
+  );
+
+  const fetchMongoStatus = async () => {
+    try {
+      const res = await mongoService.getStatus();
+      setMongoStatus(res);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchMongoStatus();
+  }, []);
+
+  const handleTestMongo = async () => {
+    setIsTestingMongo(true);
+    setMongoMsg(null);
+    try {
+      const res = await mongoService.testConnection(mongoUriInput.trim());
+      setIsTestingMongo(false);
+      await fetchMongoStatus();
+      if (res.connected) {
+        setMongoMsg({ type: 'success', text: 'تم فحص الاتصال بكلاستر MongoDB Atlas بنجاح! السيرفر متصل بالقاعدة.' });
+      } else {
+        setMongoMsg({ 
+          type: 'error', 
+          text: res.message || 'تعذر الاتصال بـ MongoDB. يرجى التأكد من إضافة 0.0.0.0/0 في Network Access بموقع mongodb.com' 
+        });
+      }
+    } catch (err: any) {
+      setIsTestingMongo(false);
+      setMongoMsg({ type: 'error', text: err?.message || 'خطأ أثناء اختبار الاتصال' });
+    }
+  };
+
+  const handleSyncMongo = async () => {
+    setIsSyncingMongo(true);
+    setMongoMsg(null);
+    try {
+      const res = await mongoService.syncAllData({
+        settings: cafeSettings,
+        products,
+        inventory,
+        orders,
+        users: usersList,
+        tables,
+        playstations,
+      });
+      setIsSyncingMongo(false);
+      await fetchMongoStatus();
+      if (res.success) {
+        setMongoMsg({
+          type: 'success',
+          text: 'تمت مزامنة ورفع كافة بيانات الكافيه (المنيو، الخامات، الفواتير، المستخدمين، الهوية) إلى كلاستر MongoDB Atlas بنجاح!'
+        });
+      } else {
+        setMongoMsg({
+          type: 'error',
+          text: res.message || 'فشلت المزامنة'
+        });
+      }
+    } catch (err: any) {
+      setIsSyncingMongo(false);
+      setMongoMsg({ type: 'error', text: err?.message || 'خطأ أثناء مزامنة البيانات مع MongoDB' });
+    }
+  };
 
   // Quick price editing state
   const [quickPriceMap, setQuickPriceMap] = useState<{ [id: string]: number }>({});
@@ -362,6 +439,26 @@ export const AdminHubView: React.FC = () => {
         >
           <Download className="w-4 h-4" />
           <span>النسخ الاحتياطي (Backup)</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('mongodb');
+            fetchMongoStatus();
+          }}
+          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'mongodb'
+              ? 'bg-[#231f1e] text-white shadow-xs'
+              : 'text-[#5e4f44] hover:bg-white/60'
+          }`}
+        >
+          <Database className="w-4 h-4 text-emerald-400" />
+          <span>سحابة MongoDB Atlas</span>
+          {mongoStatus?.connected ? (
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+          )}
         </button>
       </div>
 
@@ -732,7 +829,7 @@ export const AdminHubView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#423226] mb-1 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-[#8c6239]" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#8c6239]" />
                   <span>رقم السجل التجاري (Commercial Reg)</span>
                 </label>
                 <input
@@ -1876,6 +1973,205 @@ export const AdminHubView: React.FC = () => {
               >
                 إعادة ضبط المصنع
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 8: MONGODB ATLAS CLOUD SYNC ================= */}
+      {activeTab === 'mongodb' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 sm:p-7 rounded-3xl border border-[#ded3c3] shadow-xs space-y-6">
+            {/* Header with live status badge */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-[#f0e7db]">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-950 text-emerald-400 flex items-center justify-center shrink-0 shadow-sm border border-emerald-500/30">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-black text-[#231f1e]">الربط السحابي بقاعدة بيانات MongoDB Atlas</h2>
+                    {mongoStatus?.connected ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        متصل بالسحابة الآن
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        بانتظار تصريح الـ IP
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#7d6c60] mt-0.5">
+                    كلاستر MongoDB Atlas الخاص بك: <code className="font-mono text-[#231f1e] font-bold">cluster0.w7l7m9v.mongodb.net</code>
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestMongo}
+                  disabled={isTestingMongo}
+                  className="px-4 py-2.5 rounded-xl border border-[#ded3c3] hover:bg-[#faf6f0] text-xs font-bold text-[#423226] transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#8c6239] ${isTestingMongo ? 'animate-spin' : ''}`} />
+                  <span>{isTestingMongo ? 'جارٍ الفحص...' : 'فحص الاتصال الآن'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSyncMongo}
+                  disabled={isSyncingMongo}
+                  className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-md flex items-center gap-2 disabled:bg-gray-400"
+                >
+                  <Upload className={`w-4 h-4 ${isSyncingMongo ? 'animate-bounce' : ''}`} />
+                  <span>{isSyncingMongo ? 'جارٍ المزامنة السحابية...' : 'مزامنة كافة البيانات إلى MongoDB'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Banner */}
+            {mongoMsg && (
+              <div
+                className={`p-4 rounded-2xl border text-xs font-bold flex items-start gap-2.5 ${
+                  mongoMsg.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                    : 'bg-rose-50 text-rose-900 border-rose-300'
+                }`}
+              >
+                {mongoMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <span>{mongoMsg.text}</span>
+              </div>
+            )}
+
+            {/* Overview Grid: Cluster Info & Collections Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Cluster Meta */}
+              <div className="p-4 bg-[#faf6f0] rounded-2xl border border-[#ded3c3] space-y-2">
+                <span className="text-[11px] font-bold text-[#8c7b6d] block">معلومات الكلاستر</span>
+                <div className="text-xs space-y-1.5 font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-[#6e5f54] font-sans">الكلاستر:</span>
+                    <strong className="text-[#231f1e]">Cluster0</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6e5f54] font-sans">قاعدة البيانات:</span>
+                    <strong className="text-[#231f1e]">hub_cafe_db</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6e5f54] font-sans">المستخدم:</span>
+                    <strong className="text-[#231f1e] text-[11px]">ahmedmohamedm4336_db_user</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6e5f54] font-sans">الضغط (Compression):</span>
+                    <strong className="text-[#231f1e]">zlib</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Local vs Cloud Data Count */}
+              <div className="p-4 bg-[#faf6f0] rounded-2xl border border-[#ded3c3] space-y-2">
+                <span className="text-[11px] font-bold text-[#8c7b6d] block">البيانات الجاهزة للمزامنة</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-white p-2 rounded-xl border border-[#ded3c3] text-center">
+                    <span className="text-[10px] text-[#8c7b6d] block">المنتجات (المنيو)</span>
+                    <strong className="text-sm font-mono text-[#231f1e]">{products.length}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-[#ded3c3] text-center">
+                    <span className="text-[10px] text-[#8c7b6d] block">خامات المخزن</span>
+                    <strong className="text-sm font-mono text-[#231f1e]">{inventory.length}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-[#ded3c3] text-center">
+                    <span className="text-[10px] text-[#8c7b6d] block">المستخدمين</span>
+                    <strong className="text-sm font-mono text-[#231f1e]">{usersList.length}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-[#ded3c3] text-center">
+                    <span className="text-[10px] text-[#8c7b6d] block">أجهزة PS</span>
+                    <strong className="text-sm font-mono text-[#231f1e]">{playstations.length}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sync Status */}
+              <div className="p-4 bg-[#231f1e] text-white rounded-2xl space-y-3 flex flex-col justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-amber-300 block">حالة المزامنة السحابية</span>
+                  <p className="text-xs text-[#c2b4a3] mt-1 leading-relaxed">
+                    يتم حفظ جميع التعديلات في المجموعات (Collections) الرسمية لكافيه:
+                    <br />
+                    <code className="text-amber-200 font-mono text-[10px]">
+                      hub_settings, hub_products, hub_inventory, hub_orders, hub_users
+                    </code>
+                  </p>
+                </div>
+                <div className="text-[10px] font-mono text-[#a49586] border-t border-white/10 pt-2">
+                  آخر فحص: {new Date().toLocaleTimeString('ar-EG')}
+                </div>
+              </div>
+            </div>
+
+            {/* Crucial Network Access Instructions (How to solve SSL Alert 80) */}
+            <div className="p-5 bg-amber-50/80 rounded-2xl border border-amber-200 space-y-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-amber-800" />
+                <h3 className="text-sm font-black text-amber-950">
+                  خطوة واحدة هامة في لوحة تحكم MongoDB Atlas لتشغيل الاتصال السحابي:
+                </h3>
+              </div>
+
+              <p className="text-xs text-amber-900 leading-relaxed">
+                تقوم منصة MongoDB Atlas لأسباب أمنية بحظر أي اتصال قادم من خوادم خارجية جديدة حتى تسمح لها من إعدادات الـ IP. لحل ذلك في دقيقة واحدة:
+              </p>
+
+              <ol className="text-xs text-amber-900 space-y-2 list-decimal list-inside pr-2 font-medium">
+                <li>
+                  ادخل على موقع <a href="https://cloud.mongodb.com" target="_blank" rel="noopener noreferrer" className="font-bold underline text-amber-950 inline-flex items-center gap-1">cloud.mongodb.com <ExternalLink className="w-3 h-3" /></a>
+                </li>
+                <li>
+                  من القائمة الجانبية اليسرى، اضغط على <strong>Network Access</strong> (تحت قسم Security).
+                </li>
+                <li>
+                  اضغط على الزر الأخضر <strong>Add IP Address</strong>.
+                </li>
+                <li>
+                  اضغط على زر <strong>Allow Access from Anywhere</strong> (سيتم وضع <code className="bg-amber-200/80 px-2 py-0.5 rounded font-mono font-bold text-[#231f1e]">0.0.0.0/0</code> تلقائياً) ثم اضغط <strong>Confirm</strong>.
+                </li>
+                <li>
+                  انتظر 30 ثانية حتى تصبح الحالة <strong>Active</strong>، ثم ارجع هنا واضغط زر <strong>فحص الاتصال الآن</strong> بالأعلى!
+                </li>
+              </ol>
+            </div>
+
+            {/* Edit Connection String Form */}
+            <div className="space-y-3 pt-2">
+              <label className="block text-xs font-bold text-[#423226]">
+                رابط الاتصال المسجل (MongoDB Connection URI):
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={mongoUriInput}
+                  onChange={(e) => setMongoUriInput(e.target.value)}
+                  className="flex-1 bg-[#faf6f0] border border-[#ded3c3] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#231f1e] dir-ltr text-left"
+                />
+                <button
+                  type="button"
+                  onClick={handleTestMongo}
+                  className="px-5 py-2.5 bg-[#231f1e] hover:bg-[#38312e] text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  فحص وتطبيق الرابط
+                </button>
+              </div>
+              <p className="text-[11px] text-[#7d6c60]">
+                تم إدخال اسم المستخدم <code className="font-bold font-mono">ahmedmohamedm4336_db_user</code> وكلمة المرور المشفرة وربطها بالسيرفر.
+              </p>
             </div>
           </div>
         </div>

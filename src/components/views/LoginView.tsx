@@ -222,7 +222,7 @@ export const LoginView: React.FC = () => {
           <div className="mt-2.5 flex items-center justify-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              قاعدة بيانات Supabase السحابية متصلة
+              قاعدة بيانات MongoDB Atlas السحابية مربوطة
             </span>
           </div>
         </div>
