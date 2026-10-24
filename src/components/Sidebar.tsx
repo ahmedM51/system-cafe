@@ -26,7 +26,7 @@ export const Sidebar: React.FC = () => {
   const { 
     activeView, setActiveView, playstations, inventory, 
     mobileMenuOpen, setMobileMenuOpen, currentUser, currentShift,
-    setIsLoginModalOpen, logout, cafeSettings
+    setIsLoginModalOpen, setIsProfileModalOpen, logout, cafeSettings
   } = useCafe();
 
   // Active PS count (matching image 5: 3 / 8 شغال)
@@ -162,8 +162,9 @@ export const Sidebar: React.FC = () => {
       {/* User Session Footer Card */}
       <div className="pt-3 border-t border-[#e2d7c7] space-y-2">
         <div 
-          onClick={() => setIsLoginModalOpen(true)}
+          onClick={() => setIsProfileModalOpen(true)}
           className="p-2.5 rounded-xl bg-white border border-[#ded3c3] hover:border-[#b8a693] transition cursor-pointer"
+          title="تعديل الملف الشخصي والصورة"
         >
           <div className="flex items-center gap-2.5">
             <img
@@ -230,9 +231,16 @@ export const Sidebar: React.FC = () => {
                       <span>{cafeSettings.logoText || 'HB'}</span>
                     )}
                   </div>
-                  <div>
+                  <div 
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="cursor-pointer"
+                    title="تعديل الملف الشخصي"
+                  >
                     <span className="font-extrabold text-xs text-[#231f1e]">{cafeSettings.cafeName}</span>
-                    <p className="text-[10px] text-[#8c7b6d]">{currentUser.name}</p>
+                    <p className="text-[10px] text-[#8c7b6d] hover:underline">{currentUser.name} (تعديل الملف)</p>
                   </div>
                 </div>
                 <button

@@ -230,8 +230,17 @@ export const AdminHubView: React.FC = () => {
   const handleSaveBranding = (e: React.FormEvent) => {
     e.preventDefault();
     updateCafeSettings(brandForm);
+    mongoService.syncAllData({
+      settings: brandForm,
+      products,
+      inventory,
+      orders,
+      users: usersList,
+      tables,
+      playstations,
+    }).catch(() => {});
     setBrandSaveSuccess(true);
-    setTimeout(() => setBrandSaveSuccess(false), 2000);
+    setTimeout(() => setBrandSaveSuccess(false), 2500);
   };
 
   // Handle Logo File Upload for Branding

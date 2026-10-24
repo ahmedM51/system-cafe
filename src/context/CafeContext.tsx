@@ -17,6 +17,9 @@ import {
   syncDataToSupabase,
   fetchDataFromSupabase
 } from '../services/supabaseService';
+import { mongoService } from '../services/mongoService';
+
+export const AUTHORIZED_ADMIN_EMAIL = 'ahmedmohamed4336@gmail.com';
 
 interface CafeContextType {
   // Authentication & Users (Supabase + Local)
@@ -24,12 +27,16 @@ interface CafeContextType {
   currentUser: User;
   usersList: User[];
   login: (emailOrIdentifier: string, passwordOrPin: string, asRole?: 'admin' | 'cashier') => Promise<LoginResult>;
+  loginWithGoogle: (googleProfile?: { email: string; name?: string; avatar?: string }) => Promise<LoginResult>;
   registerUser: (data: { name: string; email: string; password: string; phone?: string; role?: Role; avatar?: string; pin?: string }) => Promise<LoginResult>;
   logout: () => void;
   quickLoginAs: (role: 'admin' | 'cashier') => void;
   switchUser: (role: 'admin' | 'cashier') => void;
   isLoginModalOpen: boolean;
   setIsLoginModalOpen: (open: boolean) => void;
+  isProfileModalOpen: boolean;
+  setIsProfileModalOpen: (open: boolean) => void;
+  updateCurrentUserProfile: (updates: { name?: string; phone?: string; pin?: string; avatar?: string }) => Promise<void>;
   supabaseConnected: boolean;
 
   // Users & Staff Management (Admin Controlled)
@@ -157,6 +164,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [supabaseConnected] = useState<boolean>(true);
 
   // Users List with localStorage and Supabase Cloud persistence
@@ -516,12 +524,47 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => clearInterval(timer);
   }, [soundEnabled]);
 
-  // Load cloud users on mount if available
+  // Load cloud data on mount from MongoDB Atlas and Supabase
   useEffect(() => {
+    let isMounted = true;
     async function loadCloudData() {
       try {
+        // 1. Hydrate from MongoDB Atlas (Server)
+        const mongoRes = await mongoService.fetchAllData();
+        if (isMounted && mongoRes.success && mongoRes.data) {
+          const d = mongoRes.data;
+          if (d.settings && d.settings.cafeName) {
+            setCafeSettings(d.settings);
+            localStorage.setItem('hub_cafe_settings', JSON.stringify(d.settings));
+          }
+          if (Array.isArray(d.products) && d.products.length > 0) {
+            setProducts(d.products);
+            localStorage.setItem('hub_cafe_products', JSON.stringify(d.products));
+          }
+          if (Array.isArray(d.inventory) && d.inventory.length > 0) {
+            setInventory(d.inventory);
+            localStorage.setItem('hub_cafe_inventory', JSON.stringify(d.inventory));
+          }
+          if (Array.isArray(d.users) && d.users.length > 0) {
+            setUsersList(d.users);
+            localStorage.setItem('hub_cafe_users', JSON.stringify(d.users));
+          }
+          if (Array.isArray(d.tables) && d.tables.length > 0) {
+            setTables(d.tables);
+            localStorage.setItem('hub_cafe_tables', JSON.stringify(d.tables));
+          }
+          if (Array.isArray(d.playstations) && d.playstations.length > 0) {
+            setPlaystations(d.playstations);
+            localStorage.setItem('hub_cafe_playstations', JSON.stringify(d.playstations));
+          }
+        }
+      } catch (err) {
+        console.warn('Initial MongoDB hydration:', err);
+      }
+
+      try {
         const cloudUsers = await fetchDataFromSupabase<User[]>('users');
-        if (cloudUsers && Array.isArray(cloudUsers) && cloudUsers.length > 0) {
+        if (isMounted && cloudUsers && Array.isArray(cloudUsers) && cloudUsers.length > 0) {
           setUsersList(cloudUsers);
           localStorage.setItem('hub_cafe_users', JSON.stringify(cloudUsers));
         }
@@ -530,14 +573,125 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
     loadCloudData();
+    return () => { isMounted = false; };
   }, []);
 
+  // Debounced auto-save to MongoDB Atlas whenever admin edits settings/products/inventory/users/tables/playstations
+  const autoSyncTimeoutRef = useRef<any>(null);
+  useEffect(() => {
+    if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current);
+    autoSyncTimeoutRef.current = setTimeout(() => {
+      mongoService.syncAllData({
+        settings: cafeSettings,
+        products,
+        inventory,
+        orders,
+        users: usersList,
+        tables,
+        playstations,
+      }).catch((e) => console.warn('Background cloud auto-sync warning:', e));
+    }, 2000);
+
+    return () => {
+      if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current);
+    };
+  }, [cafeSettings, products, inventory, usersList, tables, playstations]);
+
+  // Switch user role (Restricted: only ahmedmohamed4336@gmail.com can be Admin)
   const switchUser = (role: 'admin' | 'cashier') => {
-    const target = usersList.find((u) => u.role === role) || usersList[0] || INITIAL_USERS[0];
-    setCurrentUser(target);
+    if (role === 'admin') {
+      const admin = usersList.find((u) => u.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) || INITIAL_USERS[0];
+      setCurrentUser(admin);
+      setIsAuthenticated(true);
+      localStorage.setItem('hub_cafe_auth', 'true');
+      localStorage.setItem('hub_cafe_user', JSON.stringify(admin));
+    } else {
+      const cashier = usersList.find((u) => u.role === 'cashier') || INITIAL_USERS[1];
+      setCurrentUser(cashier);
+      setIsAuthenticated(true);
+      localStorage.setItem('hub_cafe_auth', 'true');
+      localStorage.setItem('hub_cafe_user', JSON.stringify(cashier));
+    }
+  };
+
+  // Google Login (Supports Chrome One Tap / GSI button)
+  const loginWithGoogle = async (googleProfile?: { email: string; name?: string; avatar?: string }): Promise<LoginResult> => {
+    const email = (googleProfile?.email || AUTHORIZED_ADMIN_EMAIL).trim().toLowerCase();
+    const isAuthorizedAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+    const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
+    const name = googleProfile?.name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : email.split('@')[0]);
+    const avatar = googleProfile?.avatar || (isAuthorizedAdmin
+      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
+      : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150');
+
+    const permissions = isAuthorizedAdmin
+      ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
+      : ['pos', 'tables', 'orders', 'playstation', 'shifts'];
+
+    const existingUser = usersList.find((u) => u.email.toLowerCase() === email);
+    const googleUser: User = {
+      id: existingUser?.id || (isAuthorizedAdmin ? 'user-admin' : `user-google-${Date.now()}`),
+      name: existingUser?.name || name,
+      email: email,
+      role: role,
+      avatar: existingUser?.avatar || avatar,
+      phone: existingUser?.phone || (isAuthorizedAdmin ? '+20 100 433 6000' : ''),
+      pin: existingUser?.pin || (isAuthorizedAdmin ? '4336' : '1234'),
+      permissions: permissions,
+      lastLogin: new Date().toISOString(),
+    };
+
+    setCurrentUser(googleUser);
     setIsAuthenticated(true);
     localStorage.setItem('hub_cafe_auth', 'true');
-    localStorage.setItem('hub_cafe_user', JSON.stringify(target));
+    localStorage.setItem('hub_cafe_user', JSON.stringify(googleUser));
+
+    setUsersList((prev) => {
+      const exists = prev.some((u) => u.email.toLowerCase() === email);
+      const updated = exists
+        ? prev.map((u) => (u.email.toLowerCase() === email ? { ...u, ...googleUser } : u))
+        : [...prev, googleUser];
+      localStorage.setItem('hub_cafe_users', JSON.stringify(updated));
+      return updated;
+    });
+
+    return {
+      success: true,
+      message: isAuthorizedAdmin
+        ? 'مرحباً بك يا مدير النظام! تم تسجيل الدخول بحساب Google المعتمد (Admin)'
+        : `مرحباً بك يا ${googleUser.name}، تم تسجيل الدخول بحساب Google كـ كاشير`,
+      user: googleUser,
+    };
+  };
+
+  // Update Current User Profile (inside app)
+  const updateCurrentUserProfile = async (updates: { name?: string; phone?: string; pin?: string; avatar?: string }) => {
+    const updatedUser: User = {
+      ...currentUser,
+      ...updates,
+    };
+
+    setCurrentUser(updatedUser);
+    localStorage.setItem('hub_cafe_user', JSON.stringify(updatedUser));
+
+    const updatedList = usersList.map((u) => (u.id === currentUser.id ? updatedUser : u));
+    setUsersList(updatedList);
+    localStorage.setItem('hub_cafe_users', JSON.stringify(updatedList));
+
+    // Sync to cloud
+    try {
+      await mongoService.syncAllData({
+        settings: cafeSettings,
+        products,
+        inventory,
+        orders,
+        users: updatedList,
+        tables,
+        playstations,
+      });
+    } catch (e) {
+      console.warn('Profile sync to mongo warning:', e);
+    }
   };
 
   const login = async (emailOrIdentifier: string, passwordOrPin: string, asRole?: 'admin' | 'cashier'): Promise<LoginResult> => {
@@ -551,23 +705,26 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
+    const lowerId = identifier.toLowerCase();
+    const isAuthorizedAdmin = lowerId === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
     // 1. Authenticate with real Supabase Auth (if email looks like an email and secret provided)
     if (secret && identifier.includes('@')) {
       try {
         const { data: supaData, error: supaError } = await signInWithSupabase(identifier, secret);
         if (supaData?.user && !supaError) {
           const meta = supaData.user.user_metadata || {};
-          const role: Role = (meta.role as Role) || (asRole || 'admin');
+          const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
           const supaUser: User = {
             id: supaData.user.id,
-            name: meta.name || identifier.split('@')[0],
+            name: meta.name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : identifier.split('@')[0]),
             email: supaData.user.email || identifier,
             role: role,
             avatar: meta.avatar || (role === 'admin'
               ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
               : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'),
-            phone: meta.phone || '',
-            pin: meta.pin || '',
+            phone: meta.phone || (isAuthorizedAdmin ? '+20 100 433 6000' : ''),
+            pin: meta.pin || (isAuthorizedAdmin ? '4336' : '1234'),
             permissions: role === 'admin'
               ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
               : ['pos', 'tables', 'orders', 'playstation', 'shifts'],
@@ -602,7 +759,6 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     // 2. Check local users by email, name or PIN
-    const lowerId = identifier.toLowerCase();
     const matchedUser = usersList.find(
       (u) =>
         u.email.toLowerCase() === lowerId ||
@@ -612,8 +768,14 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
 
     if (matchedUser) {
+      // STRICT ADMIN CHECK: ONLY ahmedmohamed4336@gmail.com can hold admin role
+      const effectiveRole: Role = (matchedUser.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) ? 'admin' : 'cashier';
       const updatedUser: User = {
         ...matchedUser,
+        role: effectiveRole,
+        permissions: effectiveRole === 'admin'
+          ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
+          : ['pos', 'tables', 'orders', 'playstation', 'shifts'],
         lastLogin: new Date().toISOString(),
       };
       setCurrentUser(updatedUser);
@@ -627,24 +789,25 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
-    // 3. Fallback for admin or cashier default credentials
-    if (asRole === 'admin' || lowerId.includes('ahmed') || lowerId.includes('admin') || secret === '4336' || secret === 'Admin@123456') {
-      const admin = usersList.find((u) => u.role === 'admin') || INITIAL_USERS[0];
-      const updated: User = { ...admin, lastLogin: new Date().toISOString() };
+    // 3. Admin direct login fallback for ahmedmohamed4336@gmail.com
+    if (isAuthorizedAdmin || (lowerId.includes('ahmed') && secret === '4336')) {
+      const admin = usersList.find((u) => u.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) || INITIAL_USERS[0];
+      const updated: User = { ...admin, role: 'admin', lastLogin: new Date().toISOString() };
       setCurrentUser(updated);
       setIsAuthenticated(true);
       localStorage.setItem('hub_cafe_auth', 'true');
       localStorage.setItem('hub_cafe_user', JSON.stringify(updated));
       return {
         success: true,
-        message: `مرحباً بك يا ${updated.name}`,
+        message: `مرحباً بك يا ${updated.name} (المدير العام)`,
         user: updated,
       };
     }
 
-    if (asRole === 'cashier' || lowerId.includes('cashier') || lowerId.includes('mohamed') || secret === '1234') {
+    // 4. Cashier fallback
+    if (lowerId.includes('cashier') || lowerId.includes('mohamed') || secret === '1234') {
       const cashier = usersList.find((u) => u.role === 'cashier') || INITIAL_USERS[1];
-      const updated: User = { ...cashier, lastLogin: new Date().toISOString() };
+      const updated: User = { ...cashier, role: 'cashier', lastLogin: new Date().toISOString() };
       setCurrentUser(updated);
       setIsAuthenticated(true);
       localStorage.setItem('hub_cafe_auth', 'true');
@@ -658,7 +821,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return {
       success: false,
-      message: 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور أو إنشاء حساب جديد.',
+      message: 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني أو رمز PIN.',
     };
   };
 
@@ -673,7 +836,9 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }): Promise<LoginResult> => {
     try {
       const email = data.email.trim().toLowerCase();
-      const role = data.role || 'cashier';
+      // STRICT ROLE ENFORCEMENT: ONLY ahmedmohamed4336@gmail.com can be Admin
+      const isAuthorizedAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
       const defaultAvatar =
         role === 'admin'
           ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
@@ -710,6 +875,17 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUsersList(updatedList);
       localStorage.setItem('hub_cafe_users', JSON.stringify(updatedList));
       syncDataToSupabase('users', updatedList).catch(() => {});
+
+      // Sync to MongoDB Atlas
+      mongoService.syncAllData({
+        settings: cafeSettings,
+        products,
+        inventory,
+        orders,
+        users: updatedList,
+        tables,
+        playstations,
+      }).catch(() => {});
 
       setCurrentUser(newUser);
       setIsAuthenticated(true);
@@ -1823,12 +1999,16 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         currentUser,
         usersList,
         login,
+        loginWithGoogle,
         registerUser,
         logout,
         quickLoginAs,
         switchUser,
         isLoginModalOpen,
         setIsLoginModalOpen,
+        isProfileModalOpen,
+        setIsProfileModalOpen,
+        updateCurrentUserProfile,
         supabaseConnected,
         addUser,
         updateUser,

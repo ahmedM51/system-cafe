@@ -17,12 +17,13 @@ import { AdminHubView } from './components/views/AdminHubView';
 import { DatabaseProjectLabView } from './components/views/DatabaseProjectLabView';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { AuthModal } from './components/modals/AuthModal';
+import { EditProfileModal } from './components/modals/EditProfileModal';
 import { ProductEditModal } from './components/modals/ProductEditModal';
 import { NotificationPanel } from './components/notifications/NotificationPanel';
 import { NotificationToast } from './components/notifications/NotificationToast';
 
 const AppContent: React.FC = () => {
-  const { activeView, isAuthenticated } = useCafe();
+  const { activeView, isAuthenticated, isProfileModalOpen, setIsProfileModalOpen } = useCafe();
 
   // If user is not authenticated or explicitly at login view, show Login View
   if (!isAuthenticated || activeView === 'login') {
@@ -88,6 +89,9 @@ const AppContent: React.FC = () => {
 
       {/* Global User Authentication & Switching Modal */}
       <AuthModal />
+
+      {/* Global Edit Profile Modal (Name, Photo, Phone, PIN) */}
+      <EditProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
 
       {/* Global Product Add/Edit Modal (Admin CMS) */}
       <ProductEditModal />

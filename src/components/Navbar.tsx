@@ -7,10 +7,11 @@ import {
 
 export const Navbar: React.FC = () => {
   const { 
-    currentUser, switchUser, currentShift, setActiveView, activeView,
+    currentUser, currentShift, setActiveView, activeView,
     resetToInitialData, mobileMenuOpen, setMobileMenuOpen,
     setIsLoginModalOpen, logout, cafeSettings,
-    unreadNotificationsCount, setIsNotificationPanelOpen, isNotificationPanelOpen
+    unreadNotificationsCount, setIsNotificationPanelOpen, isNotificationPanelOpen,
+    setIsProfileModalOpen
   } = useCafe();
 
   return (
@@ -116,9 +117,9 @@ export const Navbar: React.FC = () => {
 
         {/* Current User Badge & Account Switch Trigger */}
         <button
-          onClick={() => setIsLoginModalOpen(true)}
+          onClick={() => setIsProfileModalOpen(true)}
           className="flex items-center gap-1.5 sm:gap-2 bg-white hover:bg-[#f6eee4] border border-[#d8c8b4] py-1 px-2 sm:px-2.5 rounded-xl transition cursor-pointer text-right shadow-2xs"
-          title="إدارة الحساب والمصادقة"
+          title="تعديل الملف الشخصي (الاسم، الصورة، الهاتف، PIN)"
         >
           <img
             src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
@@ -140,34 +141,6 @@ export const Navbar: React.FC = () => {
           </div>
           <ChevronDown className="w-3.5 h-3.5 text-[#8c7b6d] hidden sm:block" />
         </button>
-
-        {/* User Role Quick Switcher */}
-        <div className="flex items-center bg-white border border-[#d8c8b4] rounded-lg p-0.5 shadow-2xs">
-          <button
-            onClick={() => switchUser('admin')}
-            title="التبديل إلى حساب المدير العام"
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded text-[11px] sm:text-xs font-semibold transition cursor-pointer ${
-              currentUser.role === 'admin'
-                ? 'bg-[#231f1e] text-white shadow-xs'
-                : 'text-[#6d5d51] hover:text-[#231f1e]'
-            }`}
-          >
-            <Shield className="w-3 h-3 text-amber-400" />
-            <span className="hidden xs:inline">المدير</span>
-          </button>
-          <button
-            onClick={() => switchUser('cashier')}
-            title="التبديل إلى حساب الكاشير"
-            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded text-[11px] sm:text-xs font-semibold transition cursor-pointer ${
-              currentUser.role === 'cashier'
-                ? 'bg-[#231f1e] text-white shadow-xs'
-                : 'text-[#6d5d51] hover:text-[#231f1e]'
-            }`}
-          >
-            <User className="w-3 h-3 text-emerald-400" />
-            <span className="hidden xs:inline">الكاشير</span>
-          </button>
-        </div>
 
         {/* Logout Button */}
         <button
