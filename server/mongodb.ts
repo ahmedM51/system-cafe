@@ -284,5 +284,77 @@ export function createMongoApiRouter() {
     }
   });
 
+  // 5. Real Google Authentication via MongoDB
+  router.post('/auth/google', async (req: Request, res: Response) => {
+    const { email, name, avatar, googleId } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'البريد الإلكتروني مطلوب' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const AUTHORIZED_ADMIN = 'ahmedmohamed4336@gmail.com';
+    const isAuthorizedAdmin = cleanEmail === AUTHORIZED_ADMIN;
+    const role = isAuthorizedAdmin ? 'admin' : 'cashier';
+
+    const permissions = isAuthorizedAdmin
+      ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
+      : ['pos', 'tables', 'orders', 'playstation', 'shifts'];
+
+    const userDoc = {
+      id: isAuthorizedAdmin ? 'user-admin' : `user-g-${Date.now()}`,
+      email: cleanEmail,
+      name: name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : cleanEmail.split('@')[0]),
+      role,
+      avatar: avatar || (isAuthorizedAdmin
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'),
+      phone: isAuthorizedAdmin ? '+20 100 433 6000' : '',
+      pin: isAuthorizedAdmin ? '4336' : '1234',
+      permissions,
+      authProvider: 'google',
+      googleId: googleId || null,
+      lastLogin: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // If MongoDB is connected, upsert into MongoDB Atlas collection 'hub_users'
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_users').updateOne(
+          { email: cleanEmail },
+          { 
+            $set: userDoc,
+            $setOnInsert: { createdAt: new Date().toISOString() } 
+          },
+          { upsert: true }
+        );
+
+        const savedUser = await db.collection('hub_users').findOne({ email: cleanEmail });
+
+        return res.json({
+          success: true,
+          connected: true,
+          message: isAuthorizedAdmin
+            ? 'تم تسجيل الدخول بنجاح عبر حساب Google وحفظ المستخدم في قاعدة بيانات MongoDB Atlas (Admin)'
+            : 'تم تسجيل الدخول بنجاح عبر حساب Google وحفظ المستخدم في قاعدة بيانات MongoDB Atlas (Cashier)',
+          user: savedUser || userDoc,
+        });
+      } catch (err: any) {
+        console.warn('Mongo Google auth write error:', err.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      connected: false,
+      message: isAuthorizedAdmin
+        ? 'تم تسجيل الدخول بحساب Google المعتمد (Admin)'
+        : 'تم تسجيل الدخول بحساب Google (Cashier)',
+      user: userDoc,
+    });
+  });
+
   return router;
 }

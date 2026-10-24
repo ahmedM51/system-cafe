@@ -641,16 +641,29 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       lastLogin: new Date().toISOString(),
     };
 
-    setCurrentUser(googleUser);
+    // 1. Persist to MongoDB Atlas directly via /api/mongo/auth/google
+    let finalUser = googleUser;
+    let mongoConnected = false;
+    try {
+      const mongoAuthRes = await mongoService.authWithGoogle(googleUser);
+      if (mongoAuthRes.success && mongoAuthRes.user) {
+        finalUser = { ...googleUser, ...mongoAuthRes.user };
+        mongoConnected = true;
+      }
+    } catch (err) {
+      console.warn('MongoDB Google Auth API call warning:', err);
+    }
+
+    setCurrentUser(finalUser);
     setIsAuthenticated(true);
     localStorage.setItem('hub_cafe_auth', 'true');
-    localStorage.setItem('hub_cafe_user', JSON.stringify(googleUser));
+    localStorage.setItem('hub_cafe_user', JSON.stringify(finalUser));
 
     setUsersList((prev) => {
       const exists = prev.some((u) => u.email.toLowerCase() === email);
       const updated = exists
-        ? prev.map((u) => (u.email.toLowerCase() === email ? { ...u, ...googleUser } : u))
-        : [...prev, googleUser];
+        ? prev.map((u) => (u.email.toLowerCase() === email ? { ...u, ...finalUser } : u))
+        : [...prev, finalUser];
       localStorage.setItem('hub_cafe_users', JSON.stringify(updated));
       return updated;
     });
@@ -658,9 +671,9 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return {
       success: true,
       message: isAuthorizedAdmin
-        ? 'مرحباً بك يا مدير النظام! تم تسجيل الدخول بحساب Google المعتمد (Admin)'
-        : `مرحباً بك يا ${googleUser.name}، تم تسجيل الدخول بحساب Google كـ كاشير`,
-      user: googleUser,
+        ? (mongoConnected ? 'تم تسجيل الدخول وتوثيق الحساب في MongoDB Atlas (Admin)' : 'مرحباً بك يا مدير النظام! تم الدخول بحساب Google المعتمد (Admin)')
+        : (mongoConnected ? `تم تسجيل الدخول وتوثيق الحساب في MongoDB Atlas (${finalUser.name})` : `مرحباً بك يا ${finalUser.name}، تم الدخول بحساب Google`),
+      user: finalUser,
     };
   };
 

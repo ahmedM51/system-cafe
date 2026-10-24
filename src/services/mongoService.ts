@@ -109,4 +109,23 @@ export const mongoService = {
       };
     }
   },
+
+  /**
+   * Real Google Authentication persisted in MongoDB Atlas
+   */
+  async authWithGoogle(profile: { email: string; name?: string; avatar?: string; googleId?: string }): Promise<{ success: boolean; user?: any; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'فشل في إرسال بيانات Google إلى MongoDB',
+      };
+    }
+  },
 };

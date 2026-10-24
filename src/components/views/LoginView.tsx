@@ -37,21 +37,23 @@ export const LoginView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Handle Google Login
-  const handleGoogleSignIn = async (customEmail?: string) => {
+  // Handle Google Login connected directly to MongoDB Atlas
+  const handleGoogleSignIn = async (customEmail?: string, customName?: string, customAvatar?: string) => {
     setIsGoogleLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
-      // Check if google accounts gsi is available
-      const emailToUse = customEmail || AUTHORIZED_ADMIN_EMAIL;
+      const typedEmail = loginEmail.trim();
+      const emailToUse = customEmail || (typedEmail.includes('@') ? typedEmail : AUTHORIZED_ADMIN_EMAIL);
+      const isAuthorizedAdmin = emailToUse.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
       const res = await loginWithGoogle({
         email: emailToUse,
-        name: emailToUse === AUTHORIZED_ADMIN_EMAIL ? 'أحمد محمد (المدير العام)' : 'مستخدم Google',
-        avatar: emailToUse === AUTHORIZED_ADMIN_EMAIL 
+        name: customName || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : emailToUse.split('@')[0]),
+        avatar: customAvatar || (isAuthorizedAdmin 
           ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150')
       });
 
       setIsGoogleLoading(false);
@@ -69,7 +71,7 @@ export const LoginView: React.FC = () => {
       }
     } catch (err: any) {
       setIsGoogleLoading(false);
-      setErrorMessage(err?.message || 'فشل في تسجيل الدخول عبر Google');
+      setErrorMessage(err?.message || 'فشل في توثيق الدخول عبر Google مع MongoDB');
     }
   };
 
