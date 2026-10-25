@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { MongoClient, ServerApiVersion } from 'mongodb';
+import { MongoClient } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
 
