@@ -78,7 +78,7 @@ export const mongoService = {
   /**
    * Sync complete cafe dataset to MongoDB Atlas
    */
-  async syncAllData(payload: MongoSyncPayload): Promise<{ success: boolean; message: string; syncedRecords?: any }> {
+  async syncAllData(payload: MongoSyncPayload): Promise<{ success: boolean; message: string; syncedRecords?: any; mongoConnected?: boolean }> {
     try {
       const res = await fetch('/api/mongo/sync', {
         method: 'POST',
@@ -101,7 +101,7 @@ export const mongoService = {
   /**
    * Download all cafe records from MongoDB Atlas
    */
-  async fetchAllData(): Promise<{ success: boolean; data?: any; message?: string }> {
+  async fetchAllData(): Promise<{ success: boolean; data?: any; message?: string; mongoConnected?: boolean }> {
     try {
       const res = await fetch('/api/mongo/data');
       return await res.json();

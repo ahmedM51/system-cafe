@@ -95,10 +95,15 @@ export const AdminHubView: React.FC = () => {
       });
       setIsSyncingMongo(false);
       await fetchMongoStatus();
-      if (res.success) {
+      if (res.success && res.mongoConnected) {
         setMongoMsg({
           type: 'success',
           text: 'تمت مزامنة ورفع كافة بيانات الكافيه (المنيو، الخامات، الفواتير، المستخدمين، الهوية) إلى كلاستر MongoDB Atlas بنجاح!'
+        });
+      } else if (res.success) {
+        setMongoMsg({
+          type: 'error',
+          text: 'تعذر الحفظ في MongoDB Atlas — البيانات لم تُرفع للسحابة. تأكد من إضافة 0.0.0.0/0 في Network Access بموقع mongodb.com ثم أعد المحاولة.'
         });
       } else {
         setMongoMsg({

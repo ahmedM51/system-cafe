@@ -11,7 +11,7 @@ import type { Role } from '../../types';
 export const LoginView: React.FC = () => {
   const { 
     login, registerUser, loginWithGoogle, setActiveView, 
-    cafeSettings 
+    cafeSettings, mongoConnected
   } = useCafe();
 
   // Mode: 'login' | 'register'
@@ -191,10 +191,17 @@ export const LoginView: React.FC = () => {
           </p>
 
           <div className="mt-3 flex items-center justify-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-emerald-300 border border-white/10">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              قاعدة بيانات MongoDB السحابية متصلة
-            </span>
+            {mongoConnected ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-emerald-300 border border-white/10">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                قاعدة بيانات MongoDB السحابية متصلة
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-amber-300 border border-white/10">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                قاعدة البيانات السحابية غير متصلة حالياً
+              </span>
+            )}
           </div>
         </div>
 

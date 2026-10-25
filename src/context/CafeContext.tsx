@@ -523,6 +523,9 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         // 1. Hydrate from MongoDB Atlas (Server)
         const mongoRes = await mongoService.fetchAllData();
+        if (typeof mongoRes.mongoConnected === 'boolean') {
+          setMongoConnected(mongoRes.mongoConnected);
+        }
         if (isMounted && mongoRes.success && mongoRes.data) {
           const d = mongoRes.data;
           if (d.settings && d.settings.cafeName) {
@@ -590,7 +593,13 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         users: usersList,
         tables,
         playstations,
-      }).catch((e) => console.warn('Background cloud auto-sync warning:', e));
+      })
+        .then((res) => {
+          if (typeof res?.mongoConnected === 'boolean') {
+            setMongoConnected(res.mongoConnected);
+          }
+        })
+        .catch((e) => console.warn('Background cloud auto-sync warning:', e));
     }, 1500);
 
     return () => {

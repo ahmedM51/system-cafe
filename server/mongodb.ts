@@ -83,6 +83,35 @@ export async function connectToMongoDB(uri = DEFAULT_MONGO_URI): Promise<{ succe
   }
 }
 
+let lastConnectAttempt = 0;
+const RECONNECT_COOLDOWN_MS = 15000;
+
+/**
+ * Ensures an active MongoDB connection, retrying automatically when a previous
+ * attempt failed. This way the deployment starts persisting to Atlas immediately
+ * after the IP is allowed in Network Access, without needing a redeploy.
+ */
+async function ensureConnection(): Promise<boolean> {
+  if (isConnected && activeClient) return true;
+
+  const now = Date.now();
+  if (now - lastConnectAttempt < RECONNECT_COOLDOWN_MS) return false;
+
+  lastConnectAttempt = now;
+  const result = await connectToMongoDB();
+  return result.success;
+}
+
+/**
+ * MongoDB rejects any `$set` that touches the immutable `_id` field.
+ * Documents fetched from Atlas carry `_id`, and they are sent back by the
+ * client on every sync, so it must be stripped before writing.
+ */
+function withoutId<T extends Record<string, any>>(doc: T): Record<string, any> {
+  const { _id, ...rest } = doc || ({} as any);
+  return rest;
+}
+
 /**
  * MongoDB API Router for Cafe Management System
  */
@@ -90,6 +119,7 @@ export function createMongoApiRouter() {
   const router = express.Router();
 
   // Try initial connection in background (non-blocking)
+  lastConnectAttempt = Date.now();
   connectToMongoDB().catch((err) => {
     console.warn('Initial MongoDB Atlas connection attempt in background:', err.message);
   });
@@ -109,6 +139,7 @@ export function createMongoApiRouter() {
 
   // 1. Connection Status
   router.get('/status', async (req: Request, res: Response) => {
+    await ensureConnection();
     let collections: string[] = [];
     let countStats: { [key: string]: number } = {};
 
@@ -165,6 +196,7 @@ export function createMongoApiRouter() {
     saveToStore(payload);
     lastSyncTimestamp = new Date().toISOString();
 
+    await ensureConnection();
     const client = activeClient;
     const results: { [key: string]: number } = { serverStore: 1 };
 
@@ -180,7 +212,7 @@ export function createMongoApiRouter() {
         if (settings) {
           await db.collection('hub_settings').updateOne(
             { _id: 'main_settings' as any },
-            { $set: { ...settings, updatedAt: new Date().toISOString() } },
+            { $set: { ...withoutId(settings), updatedAt: new Date().toISOString() } },
             { upsert: true }
           );
           results['hub_settings'] = 1;
@@ -191,7 +223,7 @@ export function createMongoApiRouter() {
           for (const prod of products) {
             await db.collection('hub_products').updateOne(
               { id: prod.id },
-              { $set: { ...prod, updatedAt: new Date().toISOString() } },
+              { $set: { ...withoutId(prod), updatedAt: new Date().toISOString() } },
               { upsert: true }
             );
           }
@@ -203,7 +235,7 @@ export function createMongoApiRouter() {
           for (const inv of inventory) {
             await db.collection('hub_inventory').updateOne(
               { id: inv.id },
-              { $set: { ...inv, updatedAt: new Date().toISOString() } },
+              { $set: { ...withoutId(inv), updatedAt: new Date().toISOString() } },
               { upsert: true }
             );
           }
@@ -215,7 +247,7 @@ export function createMongoApiRouter() {
           for (const ord of orders) {
             await db.collection('hub_orders').updateOne(
               { id: ord.id },
-              { $set: { ...ord, syncedAt: new Date().toISOString() } },
+              { $set: { ...withoutId(ord), syncedAt: new Date().toISOString() } },
               { upsert: true }
             );
           }
@@ -227,7 +259,7 @@ export function createMongoApiRouter() {
           for (const u of users) {
             await db.collection('hub_users').updateOne(
               { id: u.id },
-              { $set: { ...u, updatedAt: new Date().toISOString() } },
+              { $set: { ...withoutId(u), updatedAt: new Date().toISOString() } },
               { upsert: true }
             );
           }
@@ -239,7 +271,7 @@ export function createMongoApiRouter() {
           for (const t of tables) {
             await db.collection('hub_tables').updateOne(
               { id: t.id },
-              { $set: t },
+              { $set: withoutId(t) },
               { upsert: true }
             );
           }
@@ -250,7 +282,7 @@ export function createMongoApiRouter() {
           for (const ps of playstations) {
             await db.collection('hub_playstations').updateOne(
               { id: ps.id },
-              { $set: ps },
+              { $set: withoutId(ps) },
               { upsert: true }
             );
           }
@@ -263,7 +295,7 @@ export function createMongoApiRouter() {
           for (const exp of expenses) {
             await db.collection('hub_expenses').updateOne(
               { id: exp.id },
-              { $set: exp },
+              { $set: withoutId(exp) },
               { upsert: true }
             );
           }
@@ -274,7 +306,7 @@ export function createMongoApiRouter() {
         if (currentShift && currentShift.id) {
           await db.collection('hub_shifts').updateOne(
             { id: currentShift.id },
-            { $set: currentShift },
+            { $set: withoutId(currentShift) },
             { upsert: true }
           );
           results['hub_shifts'] = 1;
@@ -312,6 +344,7 @@ export function createMongoApiRouter() {
 
   // 4. Fetch All Remote Data
   router.get('/data', async (req: Request, res: Response) => {
+    await ensureConnection();
     const client = activeClient;
     if (isConnected && client) {
       try {
@@ -441,22 +474,48 @@ export function createMongoApiRouter() {
     };
 
     // Backup store so the user is never lost even if Atlas is unreachable
-    saveToStore({ users: [userDoc] });
+    const store = loadFromStore() || {};
+    const storeUsers = Array.isArray(store.users) ? store.users : [];
+    saveToStore({
+      users: [
+        userDoc,
+        ...storeUsers.filter(
+          (u: any) => u.id !== userDoc.id && String(u.email || '').toLowerCase() !== cleanEmail
+        ),
+      ],
+    });
 
-    // Upsert into MongoDB Atlas collection 'hub_users'
-    if (isConnected && activeClient) {
+    // Upsert into MongoDB Atlas collection 'hub_users'.
+    // Profile fields (name/avatar/phone/pin) are only written on first insert so that
+    // any change made inside the app is never overwritten by the Google profile again.
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_users').updateOne(
-          { email: cleanEmail },
+          { id: userDoc.id },
           {
-            $set: userDoc,
-            $setOnInsert: { createdAt: new Date().toISOString() },
+            $set: {
+              email: userDoc.email,
+              role: userDoc.role,
+              permissions: userDoc.permissions,
+              authProvider: userDoc.authProvider,
+              googleId: userDoc.googleId,
+              tokenVerified: true,
+              lastLogin: userDoc.lastLogin,
+              updatedAt: userDoc.updatedAt,
+            },
+            $setOnInsert: {
+              name: userDoc.name,
+              avatar: userDoc.avatar,
+              phone: userDoc.phone,
+              pin: userDoc.pin,
+              createdAt: new Date().toISOString(),
+            },
           },
           { upsert: true }
         );
 
-        const savedUser = await db.collection('hub_users').findOne({ email: cleanEmail });
+        const savedUser = await db.collection('hub_users').findOne({ id: userDoc.id });
 
         return res.json({
           success: true,
@@ -512,7 +571,7 @@ export function createMongoApiRouter() {
         // 1. Insert order into hub_orders collection
         await db.collection('hub_orders').updateOne(
           { id: orderDoc.id },
-          { $set: orderDoc },
+          { $set: withoutId(orderDoc) },
           { upsert: true }
         );
 
@@ -522,7 +581,7 @@ export function createMongoApiRouter() {
             if (item.id) {
               await db.collection('hub_inventory').updateOne(
                 { id: item.id },
-                { $set: item },
+                { $set: withoutId(item) },
                 { upsert: true }
               );
             }
@@ -533,7 +592,7 @@ export function createMongoApiRouter() {
         if (shiftUpdate && shiftUpdate.id) {
           await db.collection('hub_shifts').updateOne(
             { id: shiftUpdate.id },
-            { $set: shiftUpdate },
+            { $set: withoutId(shiftUpdate) },
             { upsert: true }
           );
         }
@@ -566,12 +625,12 @@ export function createMongoApiRouter() {
       return res.status(400).json({ success: false, message: 'بيانات المنتج مطلوبة' });
     }
 
-    if (isConnected && activeClient) {
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_products').updateOne(
           { id: product.id },
-          { $set: { ...product, updatedAt: new Date().toISOString() } },
+          { $set: { ...withoutId(product), updatedAt: new Date().toISOString() } },
           { upsert: true }
         );
         return res.json({ success: true, mongoConnected: true, message: 'تم حفظ المنتج في MongoDB Atlas' });
@@ -587,12 +646,12 @@ export function createMongoApiRouter() {
       return res.status(400).json({ success: false, message: 'بيانات المصروف مطلوبة' });
     }
 
-    if (isConnected && activeClient) {
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_expenses').updateOne(
           { id: expense.id },
-          { $set: expense },
+          { $set: withoutId(expense) },
           { upsert: true }
         );
         return res.json({ success: true, mongoConnected: true, message: 'تم حفظ المصروف في MongoDB Atlas' });
@@ -608,12 +667,12 @@ export function createMongoApiRouter() {
       return res.status(400).json({ success: false, message: 'بيانات الوردية مطلوبة' });
     }
 
-    if (isConnected && activeClient) {
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_shifts').updateOne(
           { id: shift.id },
-          { $set: shift },
+          { $set: withoutId(shift) },
           { upsert: true }
         );
         return res.json({ success: true, mongoConnected: true, message: 'تم حفظ الوردية في MongoDB Atlas' });
@@ -629,12 +688,12 @@ export function createMongoApiRouter() {
       return res.status(400).json({ success: false, message: 'بيانات الترابيزة مطلوبة' });
     }
 
-    if (isConnected && activeClient) {
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_tables').updateOne(
           { id: table.id },
-          { $set: table },
+          { $set: withoutId(table) },
           { upsert: true }
         );
         return res.json({ success: true, mongoConnected: true, message: 'تم حفظ الترابيزة في MongoDB Atlas' });
@@ -650,12 +709,12 @@ export function createMongoApiRouter() {
       return res.status(400).json({ success: false, message: 'بيانات جهاز البلايستيشن مطلوبة' });
     }
 
-    if (isConnected && activeClient) {
+    if (await ensureConnection()) {
       try {
-        const db = activeClient.db('hub_cafe_db');
+        const db = activeClient!.db('hub_cafe_db');
         await db.collection('hub_playstations').updateOne(
           { id: playstation.id },
-          { $set: playstation },
+          { $set: withoutId(playstation) },
           { upsert: true }
         );
         return res.json({ success: true, mongoConnected: true, message: 'تم حفظ جلسة البلايستيشن في MongoDB Atlas' });
