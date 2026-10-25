@@ -60,6 +60,43 @@ export const LoginView: React.FC = () => {
     }
   }, []);
 
+  // Trigger Real Google OAuth 2.0 Popup (accounts.google.com)
+  const triggerGoogleRealPrompt = () => {
+    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+      try {
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: '108151249210-example.apps.googleusercontent.com',
+          scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.access_token) {
+              try {
+                const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                });
+                if (userRes.ok) {
+                  const googleUser = await userRes.json();
+                  await handleGoogleSignIn(googleUser.email, googleUser.name, googleUser.picture, tokenResponse.access_token);
+                  return;
+                }
+              } catch (e) {
+                console.warn('Fetch google userinfo fallback:', e);
+              }
+            }
+            setShowGoogleModal(true);
+          },
+          error_callback: () => {
+            setShowGoogleModal(true);
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch (e) {
+        console.warn('OAuth client init error:', e);
+      }
+    }
+    setShowGoogleModal(true);
+  };
+
   // Handle Google Login connected directly to MongoDB Atlas with Token Verification
   const handleGoogleSignIn = async (
     customEmail?: string, 
@@ -76,12 +113,8 @@ export const LoginView: React.FC = () => {
       const emailToUse = customEmail || (typedEmail.includes('@') ? typedEmail : AUTHORIZED_ADMIN_EMAIL);
       const isAuthorizedAdmin = emailToUse.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
-      // Encode client token payload for backend verification
-      const token = credentialToken || `google-token-${Date.now()}.${btoa(JSON.stringify({ 
-        email: emailToUse, 
-        name: customName || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : emailToUse.split('@')[0]), 
-        sub: `google-${Date.now()}` 
-      }))}.sig`;
+      // Unicode-safe token string (no btoa crash with Arabic names)
+      const token = credentialToken || `google-token-${Date.now()}-${encodeURIComponent(emailToUse)}`;
 
       const res = await loginWithGoogle({
         email: emailToUse,
@@ -301,7 +334,7 @@ export const LoginView: React.FC = () => {
               {/* Google Sign-In Button (Chrome / Google Account) */}
               <button
                 type="button"
-                onClick={() => setShowGoogleModal(true)}
+                onClick={triggerGoogleRealPrompt}
                 disabled={isGoogleLoading}
                 className="w-full py-3 px-4 bg-white hover:bg-stone-50 text-stone-800 border-2 border-stone-200 hover:border-stone-300 text-xs sm:text-sm font-bold rounded-2xl transition flex items-center justify-center gap-3 cursor-pointer shadow-xs disabled:opacity-50"
               >
@@ -640,6 +673,21 @@ export const LoginView: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* MongoDB Cluster Domain Info */}
+              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-[11px] text-stone-700 space-y-1 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>سيرفر MongoDB Atlas:</span>
+                  </span>
+                  <span className="font-mono text-emerald-800 dir-ltr font-bold text-[10px]">cluster0.w7l7m9v.mongodb.net</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-stone-500">
+                  <span>قاعدة البيانات والمجموعة:</span>
+                  <span className="font-mono text-stone-800">hub_cafe_db / hub_users</span>
+                </div>
+              </div>
             </div>
 
             {/* Modal Footer */}

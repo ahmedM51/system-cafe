@@ -37,12 +37,8 @@ export const AuthModal: React.FC = () => {
       const targetEmail = (emailToAuth || AUTHORIZED_ADMIN_EMAIL).trim().toLowerCase();
       const isAuthorizedAdmin = targetEmail === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
-      // Formulate client verified token structure
-      const clientToken = `google-jwt-${Date.now()}.${btoa(JSON.stringify({ 
-        email: targetEmail, 
-        name: nameToAuth || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : targetEmail.split('@')[0]),
-        sub: `google-sub-${Date.now()}` 
-      }))}.signature`;
+      // Unicode-safe client token string (no btoa Unicode crash with Arabic names)
+      const clientToken = `google-jwt-${Date.now()}-${encodeURIComponent(targetEmail)}`;
 
       const res = await loginWithGoogle({
         email: targetEmail,
@@ -310,6 +306,21 @@ export const AuthModal: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* MongoDB Cluster Domain Info */}
+              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-[11px] text-stone-700 space-y-1 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>سيرفر MongoDB Atlas:</span>
+                  </span>
+                  <span className="font-mono text-emerald-800 dir-ltr font-bold text-[10px]">cluster0.w7l7m9v.mongodb.net</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-stone-500">
+                  <span>قاعدة البيانات:</span>
+                  <span className="font-mono text-stone-800">hub_cafe_db / hub_users</span>
+                </div>
+              </div>
             </div>
           )}
 
