@@ -4,7 +4,15 @@ import {
   X, User as UserIcon, Phone, KeyRound, Camera, Upload, 
   Save, Check, Shield, AlertCircle, CheckCircle2 
 } from 'lucide-react';
-import { uploadImageToSupabase } from '../../services/supabaseService';
+
+const readFileAsDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+};
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -137,12 +145,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                       const file = e.target.files?.[0];
                       if (!file) return;
                       setIsUploading(true);
-                      const result = await uploadImageToSupabase(file, 'avatars');
-                      setIsUploading(false);
-                      if (result.url) {
-                        setAvatar(result.url);
-                      } else {
-                        alert(result.error || 'فشل في رفع الصورة');
+                      try {
+                        const dataUrl = await readFileAsDataUrl(file);
+                        setAvatar(dataUrl);
+                      } catch {
+                        alert('فشل في قراءة الصورة');
+                      } finally {
+                        setIsUploading(false);
                       }
                     }}
                   />

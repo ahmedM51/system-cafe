@@ -64,12 +64,11 @@ vercel
 
 ## الخطوة 6: إعداد البيئة (Environment Variables)
 
-إذا كنت تستخدم Supabase أو خدمات خارجية:
-1. في إعدادات النشر (Vercel/Netlify)
-2. أضف المتغيرات البيئية من ملف `.env.example`
-3. مثال المتغيرات:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+يعتمد النظام على MongoDB Atlas:
+1. في إعدادات النشر (Vercel/Netlify/Render)
+2. أضف المتغيرات البيئية:
+   - `MONGODB_URI=mongodb+srv://ahmedmohamedm4336_db_user:QRJyIXO7ZZNlY5rI@cluster0.w7l7m9v.mongodb.net/hub_cafe_db`
+   - `PORT=3000`
 
 ## 📋 التحقق من النشر
 

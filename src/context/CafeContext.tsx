@@ -9,20 +9,12 @@ import {
   INITIAL_TABLES, INITIAL_EXPENSES, INITIAL_SHIFT, INITIAL_DAY_SUMMARY,
   INITIAL_SETTINGS, INITIAL_CATEGORIES
 } from '../data/initialData';
-import {
-  signInWithSupabase,
-  registerUserInSupabase,
-  updateUserInSupabase,
-  deleteUserFromSupabase,
-  syncDataToSupabase,
-  fetchDataFromSupabase
-} from '../services/supabaseService';
 import { mongoService } from '../services/mongoService';
 
 export const AUTHORIZED_ADMIN_EMAIL = 'ahmedmohamed4336@gmail.com';
 
 interface CafeContextType {
-  // Authentication & Users (Supabase + Local)
+  // Authentication & Users (MongoDB Atlas + Local)
   isAuthenticated: boolean;
   currentUser: User;
   usersList: User[];
@@ -37,7 +29,7 @@ interface CafeContextType {
   isProfileModalOpen: boolean;
   setIsProfileModalOpen: (open: boolean) => void;
   updateCurrentUserProfile: (updates: { name?: string; phone?: string; pin?: string; avatar?: string }) => Promise<void>;
-  supabaseConnected: boolean;
+  mongoConnected: boolean;
 
   // Users & Staff Management (Admin Controlled)
   addUser: (userData: Omit<User, 'id'> & { password?: string }) => Promise<User>;
@@ -165,9 +157,9 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
-  const [supabaseConnected] = useState<boolean>(true);
+  const [mongoConnected, setMongoConnected] = useState<boolean>(true);
 
-  // Users List with localStorage and Supabase Cloud persistence
+  // Users List with localStorage and MongoDB Atlas Cloud persistence
   const [usersList, setUsersList] = useState<User[]>(() => {
     const saved = localStorage.getItem('hub_cafe_users');
     if (saved) {
@@ -524,7 +516,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => clearInterval(timer);
   }, [soundEnabled]);
 
-  // Load cloud data on mount from MongoDB Atlas and Supabase
+  // Load cloud data on mount from MongoDB Atlas
   useEffect(() => {
     let isMounted = true;
     async function loadCloudData() {
@@ -576,16 +568,6 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } catch (err) {
         console.warn('Initial MongoDB hydration:', err);
-      }
-
-      try {
-        const cloudUsers = await fetchDataFromSupabase<User[]>('users');
-        if (isMounted && cloudUsers && Array.isArray(cloudUsers) && cloudUsers.length > 0) {
-          setUsersList(cloudUsers);
-          localStorage.setItem('hub_cafe_users', JSON.stringify(cloudUsers));
-        }
-      } catch (err) {
-        // Fallback to local
       }
     }
     loadCloudData();
@@ -746,62 +728,12 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const lowerId = identifier.toLowerCase();
     const isAuthorizedAdmin = lowerId === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Authenticate with real Supabase Auth (if email looks like an email and secret provided)
-    if (secret && identifier.includes('@')) {
-      try {
-        const { data: supaData, error: supaError } = await signInWithSupabase(identifier, secret);
-        if (supaData?.user && !supaError) {
-          const meta = supaData.user.user_metadata || {};
-          const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
-          const supaUser: User = {
-            id: supaData.user.id,
-            name: meta.name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : identifier.split('@')[0]),
-            email: supaData.user.email || identifier,
-            role: role,
-            avatar: meta.avatar || (role === 'admin'
-              ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-              : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'),
-            phone: meta.phone || (isAuthorizedAdmin ? '+20 100 433 6000' : ''),
-            pin: meta.pin || (isAuthorizedAdmin ? '4336' : '1234'),
-            permissions: role === 'admin'
-              ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
-              : ['pos', 'tables', 'orders', 'playstation', 'shifts'],
-            lastLogin: new Date().toISOString(),
-          };
-
-          setCurrentUser(supaUser);
-          setIsAuthenticated(true);
-          localStorage.setItem('hub_cafe_auth', 'true');
-          localStorage.setItem('hub_cafe_user', JSON.stringify(supaUser));
-
-          // Ensure it's tracked in usersList
-          setUsersList((prev) => {
-            const exists = prev.some((u) => u.email.toLowerCase() === supaUser.email.toLowerCase());
-            const updated = exists
-              ? prev.map((u) => (u.email.toLowerCase() === supaUser.email.toLowerCase() ? { ...u, ...supaUser } : u))
-              : [...prev, supaUser];
-            localStorage.setItem('hub_cafe_users', JSON.stringify(updated));
-            syncDataToSupabase('users', updated).catch(() => {});
-            return updated;
-          });
-
-          return {
-            success: true,
-            message: `مرحباً بك يا ${supaUser.name}، تم تسجيل الدخول بنجاح عبر قاعدة البيانات`,
-            user: supaUser,
-          };
-        }
-      } catch (err) {
-        console.warn('Supabase auth attempt error:', err);
-      }
-    }
-
-    // 2. Check local users by email, name or PIN
+    // 1. Direct MongoDB & local users authentication by email, name or PIN
     const matchedUser = usersList.find(
       (u) =>
         u.email.toLowerCase() === lowerId ||
         u.name.toLowerCase() === lowerId ||
-        (secret && u.pin === secret) ||
+        (secret && (u.pin === secret || (u as any).password === secret)) ||
         (u.pin && u.pin === identifier)
     );
 
@@ -885,17 +817,8 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const avatar = data.avatar || defaultAvatar;
       const pin = data.pin || Math.floor(1000 + Math.random() * 9000).toString();
 
-      // Register in Supabase Auth
-      const { user: supaUser } = await registerUserInSupabase(email, data.password, {
-        name: data.name,
-        role: role,
-        phone: data.phone || '',
-        avatar: avatar,
-        pin: pin,
-      });
-
       const newUser: User = {
-        id: supaUser?.id || `user-${Date.now()}`,
+        id: `user-${Date.now()}`,
         name: data.name,
         email: email,
         role: role,
@@ -912,7 +835,6 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const updatedList = [...usersList.filter((u) => u.email.toLowerCase() !== email), newUser];
       setUsersList(updatedList);
       localStorage.setItem('hub_cafe_users', JSON.stringify(updatedList));
-      syncDataToSupabase('users', updatedList).catch(() => {});
 
       // Sync to MongoDB Atlas
       mongoService.syncAllData({
@@ -951,20 +873,10 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       lastLogin: new Date().toISOString(),
     };
 
-    if (userData.password && userData.email) {
-      await registerUserInSupabase(userData.email, userData.password, {
-        name: userData.name,
-        role: userData.role,
-        phone: userData.phone,
-        avatar: userData.avatar,
-        pin: userData.pin,
-      }).catch(() => {});
-    }
-
     const updated = [...usersList, userWithId];
     setUsersList(updated);
     localStorage.setItem('hub_cafe_users', JSON.stringify(updated));
-    syncDataToSupabase('users', updated).catch(() => {});
+    mongoService.syncAllData({ users: updated }).catch(() => {});
     return userWithId;
   };
 
@@ -1008,7 +920,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUsersList(updated);
     localStorage.setItem('hub_cafe_users', JSON.stringify(updated));
-    syncDataToSupabase('users', updated).catch(() => {});
+    mongoService.syncAllData({ users: updated }).catch(() => {});
 
     // Update currentUser if matched
     if (updatedTargetUser) {
@@ -1023,15 +935,6 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setCurrentUser(mergedCurrent);
         localStorage.setItem('hub_cafe_user', JSON.stringify(mergedCurrent));
       }
-
-      updateUserInSupabase(target.id || target.email, {
-        name: target.name,
-        role: target.role,
-        avatar: target.avatar,
-        phone: target.phone,
-        pin: target.pin,
-        email: target.email,
-      }).catch(() => {});
     }
   };
 
@@ -1047,11 +950,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUsersList(remaining);
     localStorage.setItem('hub_cafe_users', JSON.stringify(remaining));
-    syncDataToSupabase('users', remaining).catch(() => {});
-
-    if (toDelete.id || toDelete.email) {
-      deleteUserFromSupabase(toDelete.id || toDelete.email).catch(() => {});
-    }
+    mongoService.syncAllData({ users: remaining }).catch(() => {});
 
     if (currentUser.id === id) {
       const nextAdmin = remaining.find((u) => u.role === 'admin') || remaining[0];
@@ -2051,7 +1950,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isProfileModalOpen,
         setIsProfileModalOpen,
         updateCurrentUserProfile,
-        supabaseConnected,
+        mongoConnected,
         addUser,
         updateUser,
         deleteUser,

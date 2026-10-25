@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useCafe } from '../../context/CafeContext';
 import type { Product, PSModel, User, Role } from '../../types';
-import { uploadImageToSupabase } from '../../services/supabaseService';
 import {
   Sliders, Coffee, Image as ImageIcon, Plus, Trash2, Edit3,
   Check, Save, RefreshCw, Download, Upload, Shield, Lock,
@@ -11,6 +10,15 @@ import {
   Database, ExternalLink, HardDrive, ShieldCheck
 } from 'lucide-react';
 import { mongoService, type MongoStatusResponse } from '../../services/mongoService';
+
+const readFileAsDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+};
 
 export const AdminHubView: React.FC = () => {
   const {
@@ -1292,7 +1300,7 @@ export const AdminHubView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-[#231f1e]">إدارة المستخدمين والمشرفين (Users & Admin CMS)</h2>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
-                    مزامنة Supabase السحابية
+                    مزامنة MongoDB Atlas السحابية
                   </span>
                 </div>
                 <p className="text-xs text-[#7d6c60] mt-1">
@@ -1389,17 +1397,17 @@ export const AdminHubView: React.FC = () => {
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
-                          setUserActionMessage({ type: 'success', text: `جارٍ رفع صورة جديدة لـ ${user.name}...` });
-                          const result = await uploadImageToSupabase(file, 'avatars');
-                          if (result.url) {
-                            await updateUser(user.id, { avatar: result.url });
+                          setUserActionMessage({ type: 'success', text: `جارٍ معالجة صورة ${user.name}...` });
+                          try {
+                            const dataUrl = await readFileAsDataUrl(file);
+                            await updateUser(user.id, { avatar: dataUrl });
                             setUserActionMessage({
                               type: 'success',
-                              text: `تم تحديث وحفظ صورة ${user.name} بنجاح في قاعدة البيانات!`
+                              text: `تم تحديث وحفظ صورة ${user.name} بنجاح في قاعدة بيانات MongoDB Atlas!`
                             });
                             setTimeout(() => setUserActionMessage(null), 3500);
-                          } else {
-                            setUserActionMessage({ type: 'error', text: result.error || 'فشل في رفع الصورة' });
+                          } catch (err: any) {
+                            setUserActionMessage({ type: 'error', text: err?.message || 'فشل في قراءة الصورة' });
                           }
                         }}
                       />
@@ -1555,11 +1563,11 @@ export const AdminHubView: React.FC = () => {
                       />
 
                       <div className="space-y-2 flex-1">
-                        {/* Direct File Upload to Supabase Storage */}
+                        {/* Direct File Upload to Cloud Storage */}
                         <div>
                           <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#231f1e] hover:bg-[#38312e] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-2xs">
                             <Upload className="w-3.5 h-3.5 text-amber-300" />
-                            <span>{isUploadingUserAvatar ? 'جارٍ رفع الصورة إلى Supabase...' : 'رفع صورة من جهازك'}</span>
+                            <span>{isUploadingUserAvatar ? 'جارٍ معالجة الصورة...' : 'رفع صورة من جهازك'}</span>
                             <input
                               type="file"
                               accept="image/*"
@@ -1569,17 +1577,18 @@ export const AdminHubView: React.FC = () => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
                                 setIsUploadingUserAvatar(true);
-                                const result = await uploadImageToSupabase(file, 'avatars');
-                                setIsUploadingUserAvatar(false);
-                                if (result.url) {
-                                  setEditUserForm((prev) => ({ ...prev, avatar: result.url! }));
-                                } else {
-                                  alert(result.error || 'فشل في رفع الصورة');
+                                try {
+                                  const dataUrl = await readFileAsDataUrl(file);
+                                  setEditUserForm((prev) => ({ ...prev, avatar: dataUrl }));
+                                } catch (err: any) {
+                                  alert(err?.message || 'فشل في قراءة الصورة');
+                                } finally {
+                                  setIsUploadingUserAvatar(false);
                                 }
                               }}
                             />
                           </label>
-                          <span className="text-[10px] text-[#8c7b6d] block mt-1">يتم رفعها مباشرة لسيرفر التخزين السحابي</span>
+                          <span className="text-[10px] text-[#8c7b6d] block mt-1">يتم حفظها وتحديثها مباشرة في قاعدة البيانات</span>
                         </div>
 
                         {/* Image URL text input */}
