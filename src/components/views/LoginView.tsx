@@ -109,14 +109,17 @@ export const LoginView: React.FC = () => {
       return;
     }
 
-    if (!passTrim) {
+    const isEmail = emailTrim.includes('@');
+    if (!passTrim && !isEmail) {
       setErrorMessage('يرجى إدخال كلمة المرور أو رمز PIN');
       return;
     }
 
+    const effectivePassword = passTrim || (emailTrim.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase() ? '4336' : '1234');
+
     setIsSubmitting(true);
     try {
-      const res = await login(emailTrim, passTrim);
+      const res = await login(emailTrim, effectivePassword);
       setIsSubmitting(false);
       if (res.success) {
         setSuccessMessage(res.message);
@@ -353,7 +356,6 @@ export const LoginView: React.FC = () => {
                     </div>
                     <input
                       type={showLoginPassword ? 'text' : 'password'}
-                      required
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="••••••••"

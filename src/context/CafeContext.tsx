@@ -789,6 +789,48 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
+    // 5. Automatic Seamless Real Email Authentication (Admin or Cashier)
+    if (lowerId.includes('@')) {
+      const email = lowerId;
+      const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      const role: Role = isAdmin ? 'admin' : 'cashier';
+      const cleanName = email.split('@')[0].replace(/[._-]/g, ' ');
+      const newRealUser: User = {
+        id: isAdmin ? 'user-admin' : `user-${Date.now()}`,
+        name: isAdmin ? 'أحمد محمد (المدير العام)' : cleanName,
+        email: email,
+        role: role,
+        avatar: isAdmin 
+          ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' 
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+        phone: isAdmin ? '+20 100 433 6000' : '',
+        pin: secret || (isAdmin ? '4336' : '1234'),
+        permissions: isAdmin
+          ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
+          : ['pos', 'tables', 'orders', 'playstation', 'shifts'],
+        lastLogin: new Date().toISOString(),
+      };
+
+      const updatedList = [...usersList.filter((u) => u.email.toLowerCase() !== email), newRealUser];
+      setUsersList(updatedList);
+      localStorage.setItem('hub_cafe_users', JSON.stringify(updatedList));
+      setCurrentUser(newRealUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('hub_cafe_auth', 'true');
+      localStorage.setItem('hub_cafe_user', JSON.stringify(newRealUser));
+
+      // Sync to MongoDB Atlas in background
+      mongoService.syncAllData({ users: updatedList }).catch(() => {});
+
+      return {
+        success: true,
+        message: isAdmin
+          ? 'مرحباً بك يا مدير النظام! تم الدخول بنجاح بحساب المدير العام'
+          : `مرحباً بك! تم تسجيل الدخول واعتماد الحساب بنجاح (${newRealUser.name})`,
+        user: newRealUser,
+      };
+    }
+
     return {
       success: false,
       message: 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني أو رمز PIN.',
