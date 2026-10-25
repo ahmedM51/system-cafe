@@ -138,4 +138,107 @@ export const mongoService = {
       };
     }
   },
+
+  /**
+   * Save Order directly to MongoDB Atlas collection hub_orders on Payment
+   */
+  async saveOrderDirectly(
+    order: any, 
+    inventoryDeductions?: any[], 
+    shiftUpdate?: any
+  ): Promise<{ success: boolean; mongoConnected?: boolean; orderId?: string; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order, inventoryDeductions, shiftUpdate }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'خطأ في حفظ الطلب مباشرة في MongoDB',
+      };
+    }
+  },
+
+  /**
+   * Save Product directly to MongoDB Atlas collection hub_products
+   */
+  async saveProductDirectly(product: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e?.message };
+    }
+  },
+
+  /**
+   * Save Expense directly to MongoDB Atlas collection hub_expenses
+   */
+  async saveExpenseDirectly(expense: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expense }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e?.message };
+    }
+  },
+
+  /**
+   * Save Shift directly to MongoDB Atlas collection hub_shifts
+   */
+  async saveShiftDirectly(shift: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/shifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shift }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e?.message };
+    }
+  },
+
+  /**
+   * Save Table directly to MongoDB Atlas collection hub_tables
+   */
+  async saveTableDirectly(table: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e?.message };
+    }
+  },
+
+  /**
+   * Save PlayStation directly to MongoDB Atlas collection hub_playstations
+   */
+  async savePlaystationDirectly(playstation: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mongo/playstations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playstation }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e?.message };
+    }
+  },
 };

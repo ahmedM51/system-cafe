@@ -1296,6 +1296,10 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // 5. Clear cart
     clearCart();
     setActiveReceipt(newOrder);
+
+    // 6. Direct Instant MongoDB Save (hub_orders collection)
+    mongoService.saveOrderDirectly(newOrder).catch((e) => console.warn('Instant mongo order save:', e));
+
     return newOrder;
   };
 

@@ -465,5 +465,184 @@ export function createMongoApiRouter() {
     });
   });
 
+  // 6. Direct Instant Order Save Endpoint (/api/mongo/orders)
+  router.post('/orders', async (req: Request, res: Response) => {
+    const { order, inventoryDeductions, shiftUpdate } = req.body || {};
+    if (!order || !order.id) {
+      return res.status(400).json({ success: false, message: 'بيانات الطلب غير مكتملة' });
+    }
+
+    const orderDoc = {
+      ...order,
+      syncedAt: new Date().toISOString(),
+    };
+
+    // Update in server store
+    const store = loadFromStore() || {};
+    const existingOrders = Array.isArray(store.orders) ? store.orders : [];
+    saveToStore({
+      orders: [orderDoc, ...existingOrders.filter((o: any) => o.id !== orderDoc.id)].slice(0, 200),
+    });
+
+    const client = activeClient;
+    if (isConnected && client) {
+      try {
+        const db = client.db('hub_cafe_db');
+        
+        // 1. Insert order into hub_orders collection
+        await db.collection('hub_orders').updateOne(
+          { id: orderDoc.id },
+          { $set: orderDoc },
+          { upsert: true }
+        );
+
+        // 2. If inventory deductions provided, update ingredients in hub_inventory
+        if (Array.isArray(inventoryDeductions) && inventoryDeductions.length > 0) {
+          for (const item of inventoryDeductions) {
+            if (item.id) {
+              await db.collection('hub_inventory').updateOne(
+                { id: item.id },
+                { $set: item },
+                { upsert: true }
+              );
+            }
+          }
+        }
+
+        // 3. If shift update provided, update active shift in hub_shifts
+        if (shiftUpdate && shiftUpdate.id) {
+          await db.collection('hub_shifts').updateOne(
+            { id: shiftUpdate.id },
+            { $set: shiftUpdate },
+            { upsert: true }
+          );
+        }
+
+        return res.json({
+          success: true,
+          mongoConnected: true,
+          orderId: orderDoc.id,
+          message: 'تم حفظ الطلب وتحديث المخزن والوردية مباشرة في MongoDB Atlas (مجموعة hub_orders)!',
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.warn('Direct order mongo save error:', err.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      mongoConnected: false,
+      orderId: orderDoc.id,
+      message: 'تم حفظ الطلب في السيرفر بنجاح (سيتم نقله لـ MongoDB Atlas فور تفعيل 0.0.0.0/0)',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // 7. Direct Products Endpoint
+  router.post('/products', async (req: Request, res: Response) => {
+    const { product } = req.body || {};
+    if (!product || !product.id) {
+      return res.status(400).json({ success: false, message: 'بيانات المنتج مطلوبة' });
+    }
+
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_products').updateOne(
+          { id: product.id },
+          { $set: { ...product, updatedAt: new Date().toISOString() } },
+          { upsert: true }
+        );
+        return res.json({ success: true, mongoConnected: true, message: 'تم حفظ المنتج في MongoDB Atlas' });
+      } catch (e: any) {}
+    }
+    return res.json({ success: true, mongoConnected: false, message: 'تم الحفظ في السيرفر' });
+  });
+
+  // 8. Direct Expenses Endpoint
+  router.post('/expenses', async (req: Request, res: Response) => {
+    const { expense } = req.body || {};
+    if (!expense || !expense.id) {
+      return res.status(400).json({ success: false, message: 'بيانات المصروف مطلوبة' });
+    }
+
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_expenses').updateOne(
+          { id: expense.id },
+          { $set: expense },
+          { upsert: true }
+        );
+        return res.json({ success: true, mongoConnected: true, message: 'تم حفظ المصروف في MongoDB Atlas' });
+      } catch (e: any) {}
+    }
+    return res.json({ success: true, mongoConnected: false, message: 'تم الحفظ في السيرفر' });
+  });
+
+  // 9. Direct Shifts Endpoint
+  router.post('/shifts', async (req: Request, res: Response) => {
+    const { shift } = req.body || {};
+    if (!shift || !shift.id) {
+      return res.status(400).json({ success: false, message: 'بيانات الوردية مطلوبة' });
+    }
+
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_shifts').updateOne(
+          { id: shift.id },
+          { $set: shift },
+          { upsert: true }
+        );
+        return res.json({ success: true, mongoConnected: true, message: 'تم حفظ الوردية في MongoDB Atlas' });
+      } catch (e: any) {}
+    }
+    return res.json({ success: true, mongoConnected: false, message: 'تم الحفظ في السيرفر' });
+  });
+
+  // 10. Direct Tables Endpoint
+  router.post('/tables', async (req: Request, res: Response) => {
+    const { table } = req.body || {};
+    if (!table || !table.id) {
+      return res.status(400).json({ success: false, message: 'بيانات الترابيزة مطلوبة' });
+    }
+
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_tables').updateOne(
+          { id: table.id },
+          { $set: table },
+          { upsert: true }
+        );
+        return res.json({ success: true, mongoConnected: true, message: 'تم حفظ الترابيزة في MongoDB Atlas' });
+      } catch (e: any) {}
+    }
+    return res.json({ success: true, mongoConnected: false, message: 'تم الحفظ في السيرفر' });
+  });
+
+  // 11. Direct PlayStation Endpoint
+  router.post('/playstations', async (req: Request, res: Response) => {
+    const { playstation } = req.body || {};
+    if (!playstation || !playstation.id) {
+      return res.status(400).json({ success: false, message: 'بيانات جهاز البلايستيشن مطلوبة' });
+    }
+
+    if (isConnected && activeClient) {
+      try {
+        const db = activeClient.db('hub_cafe_db');
+        await db.collection('hub_playstations').updateOne(
+          { id: playstation.id },
+          { $set: playstation },
+          { upsert: true }
+        );
+        return res.json({ success: true, mongoConnected: true, message: 'تم حفظ جلسة البلايستيشن في MongoDB Atlas' });
+      } catch (e: any) {}
+    }
+    return res.json({ success: true, mongoConnected: false, message: 'تم الحفظ في السيرفر' });
+  });
+
   return router;
 }

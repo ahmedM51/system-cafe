@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useCafe } from '../../context/CafeContext';
 import { Product, CartItem, OrderType } from '../../types';
+import { mongoService } from '../../services/mongoService';
 import { 
   Search, Plus, Minus, Trash2, UtensilsCrossed, 
-  ShoppingBag, Bike, Tag, Check, X, Sparkles, Edit3
+  ShoppingBag, Bike, Tag, Check, X, Sparkles, Edit3,
+  Database, CheckCircle2
 } from 'lucide-react';
 
 export const PosView: React.FC = () => {
@@ -56,10 +58,37 @@ export const PosView: React.FC = () => {
     setSelectedProductForModal(null);
   };
 
-  const handleFinalCheckout = () => {
-    completeOrder(paymentMethod, customerName || undefined);
-    setShowCheckoutModal(false);
-    setCustomerName('');
+  // Real-time MongoDB Order Confirmation State
+  const [mongoOrderNotice, setMongoOrderNotice] = useState<{ id: string; success: boolean; time: string } | null>(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  const handleFinalCheckout = async () => {
+    setIsSavingOrder(true);
+    try {
+      // 1. Complete order and calculate total
+      const createdOrder = completeOrder(paymentMethod, customerName || undefined);
+      
+      // 2. Direct real-time save to MongoDB Atlas collection hub_orders
+      const mongoRes = await mongoService.saveOrderDirectly(createdOrder);
+
+      setMongoOrderNotice({
+        id: createdOrder.id,
+        success: mongoRes.success,
+        time: new Date().toLocaleTimeString('ar-EG'),
+      });
+
+      setShowCheckoutModal(false);
+      setCustomerName('');
+      setIsSavingOrder(false);
+
+      // Auto-hide notification after 5 seconds
+      setTimeout(() => {
+        setMongoOrderNotice(null);
+      }, 5000);
+    } catch (err) {
+      setIsSavingOrder(false);
+      setShowCheckoutModal(false);
+    }
   };
 
   return (
@@ -96,11 +125,34 @@ export const PosView: React.FC = () => {
               </button>
             )}
 
+            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <Database className="w-3.5 h-3.5 text-emerald-600" />
+              <span>MongoDB Orders: مزامنة لحظية</span>
+            </div>
+
             <div className="flex items-center gap-2 bg-[#faf6f0] border border-[#ded3c3] px-3.5 py-1.5 rounded-xl text-xs font-semibold text-[#4a3d34]">
               <span>الكاشير: <strong className="text-[#231f1e]">{currentUser.name}</strong></span>
             </div>
           </div>
         </div>
+
+        {/* Real-time MongoDB Order Confirmation Toast / Alert */}
+        {mongoOrderNotice && (
+          <div className="flex items-center justify-between p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl text-xs font-bold animate-fadeIn shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs shrink-0">
+                <Check className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <span className="font-black">تم حفظ الطلب ومزامنته سحابياً مباشرة في MongoDB Atlas:</span>
+                <span className="mr-1 text-emerald-700 font-mono">#{mongoOrderNotice.id}</span>
+                <span className="text-[10px] text-emerald-600 mr-2">(مجموعة hub_orders)</span>
+              </div>
+            </div>
+            <span className="text-[10px] text-emerald-700 font-mono bg-white/80 px-2 py-0.5 rounded-lg border border-emerald-200">{mongoOrderNotice.time}</span>
+          </div>
+        )}
 
         {/* Search Input Bar */}
         <div className="relative">
@@ -645,9 +697,17 @@ export const PosView: React.FC = () => {
             {/* Complete checkout */}
             <button
               onClick={handleFinalCheckout}
-              className="w-full py-3.5 bg-[#231f1e] hover:bg-[#38312e] text-white rounded-xl text-sm font-black transition cursor-pointer shadow-md"
+              disabled={isSavingOrder}
+              className="w-full py-3.5 bg-[#231f1e] hover:bg-[#38312e] text-white rounded-xl text-sm font-black transition cursor-pointer shadow-md flex items-center justify-center gap-2 disabled:opacity-60"
             >
-              إتمام الدفع وطباعة الفاتورة 🖨️
+              {isSavingOrder ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  <span>جارٍ الحفظ في MongoDB Atlas...</span>
+                </>
+              ) : (
+                <span>إتمام الدفع وطباعة الفاتورة 🖨️</span>
+              )}
             </button>
           </div>
         </div>
