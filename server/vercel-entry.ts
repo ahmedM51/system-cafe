@@ -39,7 +39,7 @@ async function getMongoRouter(): Promise<express.Router | null> {
   if (mongoRouter) return mongoRouter;
   if (mongoLoadError) return null;
   try {
-    const mod = await import('../server/mongodb');
+    const mod = await import('./mongodb');
     mongoRouter = mod.createMongoApiRouter();
     return mongoRouter;
   } catch (err: any) {
@@ -58,7 +58,7 @@ async function getCafeRouter(): Promise<express.Router | null> {
   if (cafeRouter) return cafeRouter;
   if (cafeLoadError) return null;
   try {
-    const mod = await import('../server/api');
+    const mod = await import('./api');
     cafeRouter = mod.createCafeApiRouter();
     return cafeRouter;
   } catch (err: any) {
