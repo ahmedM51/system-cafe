@@ -3,12 +3,22 @@ import { MongoClient } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
 
-// Default MongoDB URI with provided credentials
-export const DEFAULT_MONGO_URI = 
-  process.env.MONGODB_URI || 
+// Built-in Atlas connection string for hub_cafe_db. It is always kept as a
+// fallback so a missing or stale MONGODB_URI on the host can never disconnect
+// the app from Atlas.
+export const BUILT_IN_MONGO_URI =
   'mongodb+srv://ahmedmohamedm4336_db_user:QRJyIXO7ZZNlY5rI@cluster0.w7l7m9v.mongodb.net/hub_cafe_db?retryWrites=true&w=majority';
 
+// The environment variable takes priority, but the built-in URI is tried right
+// after it whenever the first attempt fails.
+const MONGO_URI_CANDIDATES: string[] = Array.from(
+  new Set([process.env.MONGODB_URI, BUILT_IN_MONGO_URI].filter(Boolean) as string[])
+);
+
+export const DEFAULT_MONGO_URI = MONGO_URI_CANDIDATES[0];
+
 let activeClient: MongoClient | null = null;
+let activeUri: string | null = null;
 let isConnected = false;
 let lastError: string | null = null;
 let lastSyncTimestamp: string | null = null;
@@ -16,6 +26,20 @@ let lastSyncTimestamp: string | null = null;
 const STORE_PATH = (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) 
   ? path.join('/tmp', 'server_store.json') 
   : path.join(process.cwd(), 'server_store.json');
+
+// Google OAuth 2.0 Web Client ID. It is a public identifier (never a secret),
+// so it is shipped as a fallback to keep Google Sign-In working even when the
+// environment variable is not configured on the host.
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '365007338591-lkqsq8iu8er994gqb5khk8aj55ha6its.apps.googleusercontent.com';
+
+function resolveGoogleClientId(): string {
+  return (
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_CLIENT_ID ||
+    DEFAULT_GOOGLE_CLIENT_ID
+  );
+}
 
 function saveToStore(data: any) {
   try {
@@ -42,64 +66,121 @@ function loadFromStore(): any {
 }
 
 /**
- * Attempt to connect to MongoDB Atlas
+ * Resolves with the value of the first promise that fulfils, or rejects with
+ * the first error once every promise has failed.
  */
-export async function connectToMongoDB(uri = DEFAULT_MONGO_URI): Promise<{ success: boolean; message: string }> {
-  try {
-    if (activeClient) {
-      try {
-        await activeClient.close();
-      } catch (e) {
-        // ignore close errors
-      }
-    }
+function firstFulfilled<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let pending = promises.length;
+    let firstError: any = null;
 
-    activeClient = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 8000,
+    promises.forEach((promise) => {
+      promise.then(resolve, (err) => {
+        if (firstError === null) firstError = err;
+        pending -= 1;
+        if (pending === 0) reject(firstError);
+      });
+    });
+  });
+}
+
+/**
+ * Attempt to connect to MongoDB Atlas. When no explicit URI is given, all the
+ * configured candidates are raced in parallel and the first one that connects
+ * wins, so a missing or stale MONGODB_URI can never keep the app offline.
+ */
+export async function connectToMongoDB(uri?: string): Promise<{ success: boolean; message: string }> {
+  const candidates = uri ? [uri] : MONGO_URI_CANDIDATES;
+  let lastFailure = 'خطأ غير معروف في الاتصال';
+
+  if (activeClient) {
+    try {
+      await activeClient.close();
+    } catch (e) {
+      // ignore close errors
+    }
+    activeClient = null;
+  }
+
+  const attempts = candidates.map(async (candidate) => {
+    const client = new MongoClient(candidate, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 12000,
     });
 
-    await activeClient.connect();
-    // Ping admin or database
-    const pingResult = await activeClient.db('hub_cafe_db').command({ ping: 1 });
-    
-    isConnected = true;
-    lastError = null;
-    return { success: true, message: 'تم الاتصال بقاعدة بيانات MongoDB Atlas بنجاح!' };
-  } catch (err: any) {
-    isConnected = false;
-    const msg = err?.message || 'خطأ غير معروف في الاتصال';
-    lastError = msg;
-
-    // Check for IP Whitelist rejection (SSL alert 80)
-    if (msg.includes('SSL alert number 80') || msg.includes('tlsv1 alert internal error')) {
-      lastError = 'يرجى إضافة 0.0.0.0/0 في تبويب Network Access داخل لوحة تحكم MongoDB Atlas للسماح بالسيرفر بالاتصال.';
+    try {
+      await client.connect();
+      // Ping the target database to make sure credentials really work
+      await client.db('hub_cafe_db').command({ ping: 1 });
+    } catch (err) {
+      await client.close().catch(() => undefined);
+      throw err;
     }
 
-    return { 
-      success: false, 
-      message: lastError || 'خطأ في الاتصال بقاعدة البيانات'
-    };
+    // Another candidate already connected: drop this extra connection.
+    if (activeClient) {
+      await client.close().catch(() => undefined);
+      throw new Error('superseded');
+    }
+
+    activeClient = client;
+    activeUri = candidate;
+    isConnected = true;
+    lastError = null;
+    return candidate;
+  });
+
+  try {
+    await firstFulfilled(attempts);
+    return { success: true, message: 'تم الاتصال بقاعدة بيانات MongoDB Atlas بنجاح!' };
+  } catch (err: any) {
+    lastFailure = err?.message || lastFailure;
   }
+
+  isConnected = false;
+  activeUri = null;
+  lastError = lastFailure;
+
+  // Check for IP Whitelist rejection (SSL alert 80)
+  if (lastFailure.includes('SSL alert number 80') || lastFailure.includes('tlsv1 alert internal error')) {
+    lastError = 'يرجى إضافة 0.0.0.0/0 في تبويب Network Access داخل لوحة تحكم MongoDB Atlas للسماح بالسيرفر بالاتصال.';
+  }
+
+  return {
+    success: false,
+    message: lastError || 'خطأ في الاتصال بقاعدة البيانات'
+  };
 }
 
 let lastConnectAttempt = 0;
+let connectionPromise: Promise<boolean> | null = null;
 const RECONNECT_COOLDOWN_MS = 15000;
+
+function startConnection(): Promise<boolean> {
+  connectionPromise = connectToMongoDB()
+    .then((result) => result.success)
+    .finally(() => {
+      connectionPromise = null;
+    });
+  return connectionPromise;
+}
 
 /**
  * Ensures an active MongoDB connection, retrying automatically when a previous
- * attempt failed. This way the deployment starts persisting to Atlas immediately
- * after the IP is allowed in Network Access, without needing a redeploy.
+ * attempt failed. An in-flight attempt is awaited instead of being skipped, so
+ * the very first write after a cold start still reaches Atlas.
  */
 async function ensureConnection(): Promise<boolean> {
   if (isConnected && activeClient) return true;
+
+  // A connection attempt is already running: wait for its result.
+  if (connectionPromise) return connectionPromise;
 
   const now = Date.now();
   if (now - lastConnectAttempt < RECONNECT_COOLDOWN_MS) return false;
 
   lastConnectAttempt = now;
-  const result = await connectToMongoDB();
-  return result.success;
+  return startConnection();
 }
 
 /**
@@ -120,16 +201,13 @@ export function createMongoApiRouter() {
 
   // Try initial connection in background (non-blocking)
   lastConnectAttempt = Date.now();
-  connectToMongoDB().catch((err) => {
+  startConnection().catch((err) => {
     console.warn('Initial MongoDB Atlas connection attempt in background:', err.message);
   });
 
   // 0. Client Configuration (Google OAuth Client ID for Google Identity Services)
   router.get('/config', (req: Request, res: Response) => {
-    const googleClientId =
-      process.env.GOOGLE_CLIENT_ID ||
-      process.env.VITE_GOOGLE_CLIENT_ID ||
-      '';
+    const googleClientId = resolveGoogleClientId();
     res.json({
       success: true,
       googleClientId,
@@ -170,6 +248,12 @@ export function createMongoApiRouter() {
       username: 'ahmedmohamedm4336_db_user',
       collections,
       countStats,
+      uriSource: activeUri
+        ? activeUri === BUILT_IN_MONGO_URI
+          ? 'built-in'
+          : 'env'
+        : null,
+      envUriPresent: Boolean(process.env.MONGODB_URI),
       lastError,
       lastSyncTimestamp,
       hint: !isConnected ? 'تأكد من تفعيل Network Access على 0.0.0.0/0 في موقع mongodb.com' : undefined,
@@ -406,8 +490,7 @@ export function createMongoApiRouter() {
       });
     }
 
-    const clientId =
-      process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
+    const clientId = resolveGoogleClientId();
 
     // Verify the ID token directly with Google's official token endpoint
     let payload: any = null;

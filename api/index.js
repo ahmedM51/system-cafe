@@ -37,10 +37,15 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // server/mongodb.ts
 var mongodb_exports = {};
 __export(mongodb_exports, {
+  BUILT_IN_MONGO_URI: () => BUILT_IN_MONGO_URI,
+  DEFAULT_GOOGLE_CLIENT_ID: () => DEFAULT_GOOGLE_CLIENT_ID,
   DEFAULT_MONGO_URI: () => DEFAULT_MONGO_URI,
   connectToMongoDB: () => connectToMongoDB,
   createMongoApiRouter: () => createMongoApiRouter
 });
+function resolveGoogleClientId() {
+  return process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
+}
 function saveToStore(data) {
   try {
     let current = {};
@@ -63,43 +68,81 @@ function loadFromStore() {
   }
   return null;
 }
-async function connectToMongoDB(uri = DEFAULT_MONGO_URI) {
-  try {
-    if (activeClient) {
-      try {
-        await activeClient.close();
-      } catch (e) {
-      }
-    }
-    activeClient = new import_mongodb.MongoClient(uri, {
-      serverSelectionTimeoutMS: 5e3,
-      connectTimeoutMS: 8e3
+function firstFulfilled(promises) {
+  return new Promise((resolve, reject) => {
+    let pending = promises.length;
+    let firstError = null;
+    promises.forEach((promise) => {
+      promise.then(resolve, (err) => {
+        if (firstError === null) firstError = err;
+        pending -= 1;
+        if (pending === 0) reject(firstError);
+      });
     });
-    await activeClient.connect();
-    const pingResult = await activeClient.db("hub_cafe_db").command({ ping: 1 });
+  });
+}
+async function connectToMongoDB(uri) {
+  const candidates = uri ? [uri] : MONGO_URI_CANDIDATES;
+  let lastFailure = "\u062E\u0637\u0623 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641 \u0641\u064A \u0627\u0644\u0627\u062A\u0635\u0627\u0644";
+  if (activeClient) {
+    try {
+      await activeClient.close();
+    } catch (e) {
+    }
+    activeClient = null;
+  }
+  const attempts = candidates.map(async (candidate) => {
+    const client = new import_mongodb.MongoClient(candidate, {
+      serverSelectionTimeoutMS: 1e4,
+      connectTimeoutMS: 12e3
+    });
+    try {
+      await client.connect();
+      await client.db("hub_cafe_db").command({ ping: 1 });
+    } catch (err) {
+      await client.close().catch(() => void 0);
+      throw err;
+    }
+    if (activeClient) {
+      await client.close().catch(() => void 0);
+      throw new Error("superseded");
+    }
+    activeClient = client;
+    activeUri = candidate;
     isConnected = true;
     lastError = null;
+    return candidate;
+  });
+  try {
+    await firstFulfilled(attempts);
     return { success: true, message: "\u062A\u0645 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0642\u0627\u0639\u062F\u0629 \u0628\u064A\u0627\u0646\u0627\u062A MongoDB Atlas \u0628\u0646\u062C\u0627\u062D!" };
   } catch (err) {
-    isConnected = false;
-    const msg = err?.message || "\u062E\u0637\u0623 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641 \u0641\u064A \u0627\u0644\u0627\u062A\u0635\u0627\u0644";
-    lastError = msg;
-    if (msg.includes("SSL alert number 80") || msg.includes("tlsv1 alert internal error")) {
-      lastError = "\u064A\u0631\u062C\u0649 \u0625\u0636\u0627\u0641\u0629 0.0.0.0/0 \u0641\u064A \u062A\u0628\u0648\u064A\u0628 Network Access \u062F\u0627\u062E\u0644 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 MongoDB Atlas \u0644\u0644\u0633\u0645\u0627\u062D \u0628\u0627\u0644\u0633\u064A\u0631\u0641\u0631 \u0628\u0627\u0644\u0627\u062A\u0635\u0627\u0644.";
-    }
-    return {
-      success: false,
-      message: lastError || "\u062E\u0637\u0623 \u0641\u064A \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A"
-    };
+    lastFailure = err?.message || lastFailure;
   }
+  isConnected = false;
+  activeUri = null;
+  lastError = lastFailure;
+  if (lastFailure.includes("SSL alert number 80") || lastFailure.includes("tlsv1 alert internal error")) {
+    lastError = "\u064A\u0631\u062C\u0649 \u0625\u0636\u0627\u0641\u0629 0.0.0.0/0 \u0641\u064A \u062A\u0628\u0648\u064A\u0628 Network Access \u062F\u0627\u062E\u0644 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 MongoDB Atlas \u0644\u0644\u0633\u0645\u0627\u062D \u0628\u0627\u0644\u0633\u064A\u0631\u0641\u0631 \u0628\u0627\u0644\u0627\u062A\u0635\u0627\u0644.";
+  }
+  return {
+    success: false,
+    message: lastError || "\u062E\u0637\u0623 \u0641\u064A \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A"
+  };
+}
+function startConnection() {
+  connectionPromise = connectToMongoDB().then((result) => result.success).finally(() => {
+    connectionPromise = null;
+  });
+  return connectionPromise;
 }
 async function ensureConnection() {
   if (isConnected && activeClient) return true;
+  if (connectionPromise) return connectionPromise;
   const now = Date.now();
   if (now - lastConnectAttempt < RECONNECT_COOLDOWN_MS) return false;
   lastConnectAttempt = now;
-  const result = await connectToMongoDB();
-  return result.success;
+  return startConnection();
 }
 function withoutId(doc) {
   const { _id, ...rest } = doc || {};
@@ -108,11 +151,11 @@ function withoutId(doc) {
 function createMongoApiRouter() {
   const router = import_express.default.Router();
   lastConnectAttempt = Date.now();
-  connectToMongoDB().catch((err) => {
+  startConnection().catch((err) => {
     console.warn("Initial MongoDB Atlas connection attempt in background:", err.message);
   });
   router.get("/config", (req, res) => {
-    const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
+    const googleClientId = resolveGoogleClientId();
     res.json({
       success: true,
       googleClientId,
@@ -148,6 +191,8 @@ function createMongoApiRouter() {
       username: "ahmedmohamedm4336_db_user",
       collections,
       countStats,
+      uriSource: activeUri ? activeUri === BUILT_IN_MONGO_URI ? "built-in" : "env" : null,
+      envUriPresent: Boolean(process.env.MONGODB_URI),
       lastError,
       lastSyncTimestamp,
       hint: !isConnected ? "\u062A\u0623\u0643\u062F \u0645\u0646 \u062A\u0641\u0639\u064A\u0644 Network Access \u0639\u0644\u0649 0.0.0.0/0 \u0641\u064A \u0645\u0648\u0642\u0639 mongodb.com" : void 0
@@ -352,7 +397,7 @@ function createMongoApiRouter() {
         message: "\u0631\u0645\u0632 Google (ID Token) \u0645\u0637\u0644\u0648\u0628. \u0644\u0627 \u064A\u0645\u0643\u0646 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u062F\u0648\u0646 \u062A\u062D\u0642\u0642 \u062D\u0642\u064A\u0642\u064A \u0645\u0646 Google."
       });
     }
-    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
+    const clientId = resolveGoogleClientId();
     let payload = null;
     let verifyError = null;
     try {
@@ -618,20 +663,27 @@ function createMongoApiRouter() {
   });
   return router;
 }
-var import_express, import_mongodb, import_fs, import_path, DEFAULT_MONGO_URI, activeClient, isConnected, lastError, lastSyncTimestamp, STORE_PATH, lastConnectAttempt, RECONNECT_COOLDOWN_MS;
+var import_express, import_mongodb, import_fs, import_path, BUILT_IN_MONGO_URI, MONGO_URI_CANDIDATES, DEFAULT_MONGO_URI, activeClient, activeUri, isConnected, lastError, lastSyncTimestamp, STORE_PATH, DEFAULT_GOOGLE_CLIENT_ID, lastConnectAttempt, connectionPromise, RECONNECT_COOLDOWN_MS;
 var init_mongodb = __esm({
   "server/mongodb.ts"() {
     import_express = __toESM(require("express"));
     import_mongodb = require("mongodb");
     import_fs = __toESM(require("fs"));
     import_path = __toESM(require("path"));
-    DEFAULT_MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://ahmedmohamedm4336_db_user:QRJyIXO7ZZNlY5rI@cluster0.w7l7m9v.mongodb.net/hub_cafe_db?retryWrites=true&w=majority";
+    BUILT_IN_MONGO_URI = "mongodb+srv://ahmedmohamedm4336_db_user:QRJyIXO7ZZNlY5rI@cluster0.w7l7m9v.mongodb.net/hub_cafe_db?retryWrites=true&w=majority";
+    MONGO_URI_CANDIDATES = Array.from(
+      new Set([process.env.MONGODB_URI, BUILT_IN_MONGO_URI].filter(Boolean))
+    );
+    DEFAULT_MONGO_URI = MONGO_URI_CANDIDATES[0];
     activeClient = null;
+    activeUri = null;
     isConnected = false;
     lastError = null;
     lastSyncTimestamp = null;
     STORE_PATH = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME ? import_path.default.join("/tmp", "server_store.json") : import_path.default.join(process.cwd(), "server_store.json");
+    DEFAULT_GOOGLE_CLIENT_ID = "365007338591-lkqsq8iu8er994gqb5khk8aj55ha6its.apps.googleusercontent.com";
     lastConnectAttempt = 0;
+    connectionPromise = null;
     RECONNECT_COOLDOWN_MS = 15e3;
   }
 });
