@@ -18,10 +18,13 @@ export interface MongoStatusResponse {
 export interface MongoSyncPayload {
   settings?: any;
   products?: any[];
+  categories?: string[];
   inventory?: any[];
   orders?: any[];
-  users?: any[];
+  expenses?: any[];
+  currentShift?: any;
   shifts?: any[];
+  users?: any[];
   tables?: any[];
   playstations?: any[];
 }
@@ -111,14 +114,21 @@ export const mongoService = {
   },
 
   /**
-   * Real Google Authentication persisted in MongoDB Atlas
+   * Real Google Authentication persisted in MongoDB Atlas with Token Verification
    */
-  async authWithGoogle(profile: { email: string; name?: string; avatar?: string; googleId?: string }): Promise<{ success: boolean; user?: any; message: string }> {
+  async authWithGoogle(payload: { 
+    email?: string; 
+    name?: string; 
+    avatar?: string; 
+    googleId?: string;
+    token?: string;
+    credential?: string;
+  }): Promise<{ success: boolean; user?: any; tokenVerified?: boolean; message: string }> {
     try {
       const res = await fetch('/api/mongo/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile),
+        body: JSON.stringify(payload),
       });
       return await res.json();
     } catch (err: any) {

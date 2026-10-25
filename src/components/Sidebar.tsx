@@ -40,7 +40,6 @@ export const Sidebar: React.FC = () => {
       items: [
         { id: 'admin_hub', label: 'لوحة تحكم الإدارة الشاملة', icon: Sliders, highlight: true, adminOnly: true },
         { id: 'admin_products', label: 'المنيو والأسعار والصور', icon: Coffee, adminOnly: true },
-        { id: 'db_lab', label: 'معمل ومناقشة الداتا بيز (Mongo & Neo4j)', icon: Database, badge: 'مشروع العملي', badgeColor: 'bg-emerald-600 text-white', highlight: true },
       ],
     },
     {

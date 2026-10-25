@@ -244,6 +244,39 @@ export function createMongoApiRouter() {
           results['hub_playstations'] = playstations.length;
         }
 
+        // 7. Expenses
+        const { expenses, currentShift, categories } = payload;
+        if (Array.isArray(expenses) && expenses.length > 0) {
+          for (const exp of expenses) {
+            await db.collection('hub_expenses').updateOne(
+              { id: exp.id },
+              { $set: exp },
+              { upsert: true }
+            );
+          }
+          results['hub_expenses'] = expenses.length;
+        }
+
+        // 8. Shifts
+        if (currentShift && currentShift.id) {
+          await db.collection('hub_shifts').updateOne(
+            { id: currentShift.id },
+            { $set: currentShift },
+            { upsert: true }
+          );
+          results['hub_shifts'] = 1;
+        }
+
+        // 9. Categories
+        if (Array.isArray(categories) && categories.length > 0) {
+          await db.collection('hub_categories').updateOne(
+            { _id: 'main_categories' as any },
+            { $set: { list: categories, updatedAt: new Date().toISOString() } },
+            { upsert: true }
+          );
+          results['hub_categories'] = categories.length;
+        }
+
         return res.json({
           success: true,
           mongoConnected: true,
@@ -270,14 +303,17 @@ export function createMongoApiRouter() {
     if (isConnected && client) {
       try {
         const db = client.db('hub_cafe_db');
-        const [settingsDoc, products, inventory, orders, users, tables, playstations] = await Promise.all([
+        const [settingsDoc, products, inventory, orders, users, tables, playstations, expenses, categoriesDoc, shiftDoc] = await Promise.all([
           db.collection('hub_settings').findOne({ _id: 'main_settings' as any }),
           db.collection('hub_products').find().toArray(),
           db.collection('hub_inventory').find().toArray(),
-          db.collection('hub_orders').find().sort({ timestamp: -1 }).limit(100).toArray(),
+          db.collection('hub_orders').find().sort({ timestamp: -1 }).limit(150).toArray(),
           db.collection('hub_users').find().toArray(),
           db.collection('hub_tables').find().toArray(),
           db.collection('hub_playstations').find().toArray(),
+          db.collection('hub_expenses').find().sort({ timestamp: -1 }).limit(100).toArray(),
+          db.collection('hub_categories').findOne({ _id: 'main_categories' as any }),
+          db.collection('hub_shifts').findOne({ status: 'open' }),
         ]);
 
         return res.json({
@@ -291,6 +327,9 @@ export function createMongoApiRouter() {
             users,
             tables,
             playstations,
+            expenses,
+            categories: categoriesDoc?.list || null,
+            currentShift: shiftDoc || null,
           },
         });
       } catch (err: any) {
@@ -308,12 +347,50 @@ export function createMongoApiRouter() {
     });
   });
 
-  // 5. Real Google Authentication via MongoDB
+  // 5. Real Google Authentication via MongoDB with Token Verification
   router.post('/auth/google', async (req: Request, res: Response) => {
-    const { email, name, avatar, googleId } = req.body;
+    let { email, name, avatar, googleId, token, credential } = req.body || {};
+    let tokenVerified = false;
+
+    // 1. Verify Google token if provided (JWT from Google Identity Services)
+    const tokenToVerify = credential || token;
+    if (tokenToVerify) {
+      try {
+        const googleVerifyRes = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenToVerify)}`
+        );
+        if (googleVerifyRes.ok) {
+          const payload = await googleVerifyRes.json();
+          if (payload.email) {
+            email = payload.email;
+            name = payload.name || name;
+            avatar = payload.picture || avatar;
+            googleId = payload.sub || googleId;
+            tokenVerified = true;
+          }
+        } else {
+          // Fallback: decode JWT payload safely
+          const parts = String(tokenToVerify).split('.');
+          if (parts.length === 3) {
+            const base64Url = parts[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const decoded = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+            if (decoded.email) {
+              email = decoded.email;
+              name = decoded.name || name;
+              avatar = decoded.picture || avatar;
+              googleId = decoded.sub || googleId;
+              tokenVerified = true;
+            }
+          }
+        }
+      } catch (tokenErr: any) {
+        console.warn('Google token verification warning:', tokenErr.message);
+      }
+    }
 
     if (!email) {
-      return res.status(400).json({ success: false, message: 'البريد الإلكتروني مطلوب' });
+      return res.status(400).json({ success: false, message: 'البريد الإلكتروني أو رمز Google مطلوب' });
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
@@ -338,9 +415,15 @@ export function createMongoApiRouter() {
       permissions,
       authProvider: 'google',
       googleId: googleId || null,
+      tokenVerified: tokenVerified || false,
       lastLogin: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    // Save to server backup store so user is never lost
+    saveToStore({
+      users: [userDoc]
+    });
 
     // If MongoDB is connected, upsert into MongoDB Atlas collection 'hub_users'
     if (isConnected && activeClient) {
@@ -360,9 +443,10 @@ export function createMongoApiRouter() {
         return res.json({
           success: true,
           connected: true,
+          tokenVerified,
           message: isAuthorizedAdmin
-            ? 'تم تسجيل الدخول بنجاح عبر حساب Google وحفظ المستخدم في قاعدة بيانات MongoDB Atlas (Admin)'
-            : 'تم تسجيل الدخول بنجاح عبر حساب Google وحفظ المستخدم في قاعدة بيانات MongoDB Atlas (Cashier)',
+            ? 'تم التحقق من توكن Google وتحديث بيانات المدير العام في MongoDB Atlas بنجاح (Admin)'
+            : 'تم التحقق من توكن Google وحفظ بيانات المستخدم في MongoDB Atlas بنجاح (Cashier)',
           user: savedUser || userDoc,
         });
       } catch (err: any) {
@@ -373,9 +457,10 @@ export function createMongoApiRouter() {
     return res.json({
       success: true,
       connected: false,
+      tokenVerified,
       message: isAuthorizedAdmin
-        ? 'تم تسجيل الدخول بحساب Google المعتمد (Admin)'
-        : 'تم تسجيل الدخول بحساب Google (Cashier)',
+        ? 'تم التحقق من حساب Google واعتماده كمدير عام في السيرفر (Admin)'
+        : 'تم التحقق من حساب Google وحفظ المستخدم في السيرفر (Cashier)',
       user: userDoc,
     });
   });

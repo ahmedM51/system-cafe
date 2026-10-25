@@ -27,7 +27,7 @@ interface CafeContextType {
   currentUser: User;
   usersList: User[];
   login: (emailOrIdentifier: string, passwordOrPin: string, asRole?: 'admin' | 'cashier') => Promise<LoginResult>;
-  loginWithGoogle: (googleProfile?: { email: string; name?: string; avatar?: string }) => Promise<LoginResult>;
+  loginWithGoogle: (googleProfile?: { email?: string; name?: string; avatar?: string; token?: string; credential?: string }) => Promise<LoginResult>;
   registerUser: (data: { name: string; email: string; password: string; phone?: string; role?: Role; avatar?: string; pin?: string }) => Promise<LoginResult>;
   logout: () => void;
   quickLoginAs: (role: 'admin' | 'cashier') => void;
@@ -541,9 +541,25 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setProducts(d.products);
             localStorage.setItem('hub_cafe_products', JSON.stringify(d.products));
           }
+          if (Array.isArray(d.categories) && d.categories.length > 0) {
+            setCategories(d.categories);
+            localStorage.setItem('hub_cafe_categories', JSON.stringify(d.categories));
+          }
           if (Array.isArray(d.inventory) && d.inventory.length > 0) {
             setInventory(d.inventory);
             localStorage.setItem('hub_cafe_inventory', JSON.stringify(d.inventory));
+          }
+          if (Array.isArray(d.orders) && d.orders.length > 0) {
+            setOrders(d.orders);
+            localStorage.setItem('hub_cafe_orders', JSON.stringify(d.orders));
+          }
+          if (Array.isArray(d.expenses) && d.expenses.length > 0) {
+            setExpenses(d.expenses);
+            localStorage.setItem('hub_cafe_expenses', JSON.stringify(d.expenses));
+          }
+          if (d.currentShift && d.currentShift.id) {
+            setCurrentShift(d.currentShift);
+            localStorage.setItem('hub_cafe_shift', JSON.stringify(d.currentShift));
           }
           if (Array.isArray(d.users) && d.users.length > 0) {
             setUsersList(d.users);
@@ -576,7 +592,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => { isMounted = false; };
   }, []);
 
-  // Debounced auto-save to MongoDB Atlas whenever admin edits settings/products/inventory/users/tables/playstations
+  // Debounced auto-save to MongoDB Atlas whenever ANY entity changes
   const autoSyncTimeoutRef = useRef<any>(null);
   useEffect(() => {
     if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current);
@@ -584,18 +600,21 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       mongoService.syncAllData({
         settings: cafeSettings,
         products,
+        categories,
         inventory,
         orders,
+        expenses,
+        currentShift,
         users: usersList,
         tables,
         playstations,
       }).catch((e) => console.warn('Background cloud auto-sync warning:', e));
-    }, 2000);
+    }, 1500);
 
     return () => {
       if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current);
     };
-  }, [cafeSettings, products, inventory, usersList, tables, playstations]);
+  }, [cafeSettings, products, categories, inventory, orders, expenses, currentShift, usersList, tables, playstations]);
 
   // Switch user role (Restricted: only ahmedmohamed4336@gmail.com can be Admin)
   const switchUser = (role: 'admin' | 'cashier') => {
@@ -614,8 +633,8 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Google Login (Supports Chrome One Tap / GSI button)
-  const loginWithGoogle = async (googleProfile?: { email: string; name?: string; avatar?: string }): Promise<LoginResult> => {
+  // Google Login (Supports Chrome One Tap / GSI button / Token Verification)
+  const loginWithGoogle = async (googleProfile?: { email?: string; name?: string; avatar?: string; token?: string; credential?: string }): Promise<LoginResult> => {
     const email = (googleProfile?.email || AUTHORIZED_ADMIN_EMAIL).trim().toLowerCase();
     const isAuthorizedAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
     const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
@@ -641,14 +660,20 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       lastLogin: new Date().toISOString(),
     };
 
-    // 1. Persist to MongoDB Atlas directly via /api/mongo/auth/google
+    // 1. Verify token & persist to MongoDB Atlas directly via /api/mongo/auth/google
     let finalUser = googleUser;
     let mongoConnected = false;
+    let tokenVerified = false;
     try {
-      const mongoAuthRes = await mongoService.authWithGoogle(googleUser);
+      const mongoAuthRes = await mongoService.authWithGoogle({
+        ...googleUser,
+        token: googleProfile?.token,
+        credential: googleProfile?.credential,
+      });
       if (mongoAuthRes.success && mongoAuthRes.user) {
         finalUser = { ...googleUser, ...mongoAuthRes.user };
-        mongoConnected = true;
+        mongoConnected = Boolean(mongoAuthRes.user.mongoConnected || mongoAuthRes.tokenVerified);
+        tokenVerified = Boolean(mongoAuthRes.tokenVerified);
       }
     } catch (err) {
       console.warn('MongoDB Google Auth API call warning:', err);
