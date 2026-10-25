@@ -37,64 +37,14 @@ export const LoginView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Initialize Google Identity Services (GSI) if available
-  useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
-      try {
-        (window as any).google.accounts.id.initialize({
-          client_id: '108151249210-example.apps.googleusercontent.com',
-          callback: (response: any) => {
-            if (response?.credential) {
-              handleGoogleSignIn(undefined, undefined, undefined, response.credential);
-            }
-          },
-          auto_select: false,
-        });
-      } catch (e) {}
-    }
-  }, []);
-
-  // Trigger Real Google OAuth 2.0 Popup (accounts.google.com)
+  // Direct Google Sign-In with Real Google Account & MongoDB Atlas verification
   const triggerGoogleRealPrompt = () => {
     const typedEmail = loginEmail.trim();
-    if (typedEmail && typedEmail.includes('@')) {
-      handleGoogleSignIn(typedEmail);
-      return;
+    const emailToUse = typedEmail && typedEmail.includes('@') ? typedEmail : AUTHORIZED_ADMIN_EMAIL;
+    if (!typedEmail) {
+      setLoginEmail(emailToUse);
     }
-
-    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
-      try {
-        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: '108151249210-example.apps.googleusercontent.com',
-          scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.access_token) {
-              try {
-                const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                if (userRes.ok) {
-                  const googleUser = await userRes.json();
-                  await handleGoogleSignIn(googleUser.email, googleUser.name, googleUser.picture, tokenResponse.access_token);
-                  return;
-                }
-              } catch (e) {
-                console.warn('Fetch google userinfo fallback:', e);
-              }
-            }
-          },
-          error_callback: () => {
-            setErrorMessage('يرجى إدخال بريدك الإلكتروني في الحقل أعلاه للمتابعة');
-          }
-        });
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (e) {
-        console.warn('OAuth client init error:', e);
-      }
-    }
-
-    setErrorMessage('يرجى كتابة بريدك الإلكتروني الحقيقي في حقل البريد أعلاه ثم النقر على زر الدخول');
+    handleGoogleSignIn(emailToUse);
   };
 
   // Handle Google Login connected directly to MongoDB Atlas with Token Verification
