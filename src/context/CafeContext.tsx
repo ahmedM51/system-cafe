@@ -19,7 +19,7 @@ interface CafeContextType {
   currentUser: User;
   usersList: User[];
   login: (emailOrIdentifier: string, passwordOrPin: string, asRole?: 'admin' | 'cashier') => Promise<LoginResult>;
-  loginWithGoogle: (googleProfile?: { email?: string; name?: string; avatar?: string; token?: string; credential?: string }) => Promise<LoginResult>;
+  loginWithGoogle: (googleProfile?: { credential?: string }) => Promise<LoginResult>;
   registerUser: (data: { name: string; email: string; password: string; phone?: string; role?: Role; avatar?: string; pin?: string }) => Promise<LoginResult>;
   logout: () => void;
   quickLoginAs: (role: 'admin' | 'cashier') => void;
@@ -615,51 +615,43 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Google Login (Supports Chrome One Tap / GSI button / Token Verification)
-  const loginWithGoogle = async (googleProfile?: { email?: string; name?: string; avatar?: string; token?: string; credential?: string }): Promise<LoginResult> => {
-    const email = (googleProfile?.email || AUTHORIZED_ADMIN_EMAIL).trim().toLowerCase();
-    const isAuthorizedAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-    const role: Role = isAuthorizedAdmin ? 'admin' : 'cashier';
-    const name = googleProfile?.name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : email.split('@')[0]);
-    const avatar = googleProfile?.avatar || (isAuthorizedAdmin
-      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-      : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150');
+  // Real Google Login (Google Identity Services ID Token verified on the backend + saved to MongoDB)
+  const loginWithGoogle = async (googleProfile?: { credential?: string }): Promise<LoginResult> => {
+    const credential = googleProfile?.credential;
+    if (!credential) {
+      return { success: false, message: 'لم يتم استلام رمز Google. يرجى المحاولة مرة أخرى.' };
+    }
 
-    const permissions = isAuthorizedAdmin
-      ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
-      : ['pos', 'tables', 'orders', 'playstation', 'shifts'];
+    // 1. Verify the Google ID Token on the backend and persist the user to MongoDB Atlas
+    const mongoAuthRes = await mongoService.authWithGoogle({ credential });
+    if (!mongoAuthRes.success || !mongoAuthRes.user) {
+      return { success: false, message: mongoAuthRes.message || 'فشل التحقق من حساب Google' };
+    }
+
+    // 2. Only the verified Google account returned by the backend is trusted
+    const verified = mongoAuthRes.user;
+    const email = String(verified.email || '').trim().toLowerCase();
+    const isAuthorizedAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
     const existingUser = usersList.find((u) => u.email.toLowerCase() === email);
-    const googleUser: User = {
-      id: existingUser?.id || (isAuthorizedAdmin ? 'user-admin' : `user-google-${Date.now()}`),
-      name: existingUser?.name || name,
-      email: email,
-      role: role,
-      avatar: existingUser?.avatar || avatar,
-      phone: existingUser?.phone || (isAuthorizedAdmin ? '+20 100 433 6000' : ''),
-      pin: existingUser?.pin || (isAuthorizedAdmin ? '4336' : '1234'),
-      permissions: permissions,
+    const finalUser: User = {
+      id: verified.id || existingUser?.id || `user-google-${Date.now()}`,
+      name: verified.name || existingUser?.name || email.split('@')[0],
+      email,
+      role: (verified.role as Role) || (isAuthorizedAdmin ? 'admin' : 'cashier'),
+      avatar:
+        verified.avatar ||
+        existingUser?.avatar ||
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      phone: verified.phone || existingUser?.phone || '',
+      pin: verified.pin || existingUser?.pin || '1234',
+      permissions:
+        verified.permissions ||
+        (isAuthorizedAdmin
+          ? ['all', 'pos', 'tables', 'orders', 'playstation', 'shifts', 'inventory', 'audit', 'purchases', 'expenses', 'dashboard', 'day_report', 'qa_tests']
+          : ['pos', 'tables', 'orders', 'playstation', 'shifts']),
       lastLogin: new Date().toISOString(),
     };
-
-    // 1. Verify token & persist to MongoDB Atlas directly via /api/mongo/auth/google
-    let finalUser = googleUser;
-    let mongoConnected = false;
-    let tokenVerified = false;
-    try {
-      const mongoAuthRes = await mongoService.authWithGoogle({
-        ...googleUser,
-        token: googleProfile?.token,
-        credential: googleProfile?.credential,
-      });
-      if (mongoAuthRes.success && mongoAuthRes.user) {
-        finalUser = { ...googleUser, ...mongoAuthRes.user };
-        mongoConnected = Boolean(mongoAuthRes.user.mongoConnected || mongoAuthRes.tokenVerified);
-        tokenVerified = Boolean(mongoAuthRes.tokenVerified);
-      }
-    } catch (err) {
-      console.warn('MongoDB Google Auth API call warning:', err);
-    }
 
     setCurrentUser(finalUser);
     setIsAuthenticated(true);
@@ -677,9 +669,7 @@ export const CafeProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return {
       success: true,
-      message: isAuthorizedAdmin
-        ? (mongoConnected ? 'تم تسجيل الدخول وتوثيق الحساب في MongoDB Atlas (Admin)' : 'مرحباً بك يا مدير النظام! تم الدخول بحساب Google المعتمد (Admin)')
-        : (mongoConnected ? `تم تسجيل الدخول وتوثيق الحساب في MongoDB Atlas (${finalUser.name})` : `مرحباً بك يا ${finalUser.name}، تم الدخول بحساب Google`),
+      message: mongoAuthRes.message,
       user: finalUser,
     };
   };

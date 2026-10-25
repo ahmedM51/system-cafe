@@ -94,6 +94,19 @@ export function createMongoApiRouter() {
     console.warn('Initial MongoDB Atlas connection attempt in background:', err.message);
   });
 
+  // 0. Client Configuration (Google OAuth Client ID for Google Identity Services)
+  router.get('/config', (req: Request, res: Response) => {
+    const googleClientId =
+      process.env.GOOGLE_CLIENT_ID ||
+      process.env.VITE_GOOGLE_CLIENT_ID ||
+      '';
+    res.json({
+      success: true,
+      googleClientId,
+      googleAuthReady: Boolean(googleClientId),
+    });
+  });
+
   // 1. Connection Status
   router.get('/status', async (req: Request, res: Response) => {
     let collections: string[] = [];
@@ -347,53 +360,60 @@ export function createMongoApiRouter() {
     });
   });
 
-  // 5. Real Google Authentication via MongoDB with Token Verification
+  // 5. Real Google Authentication via Google ID Token Verification + MongoDB Atlas
   router.post('/auth/google', async (req: Request, res: Response) => {
-    let { email, name, avatar, googleId, token, credential } = req.body || {};
-    let tokenVerified = false;
+    const { credential, token } = req.body || {};
+    const idToken = String(credential || token || '').trim();
 
-    // 1. Verify Google token if provided (JWT from Google Identity Services)
-    const tokenToVerify = credential || token;
-    if (tokenToVerify) {
-      try {
-        const googleVerifyRes = await fetch(
-          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenToVerify)}`
-        );
-        if (googleVerifyRes.ok) {
-          const payload = await googleVerifyRes.json();
-          if (payload.email) {
-            email = payload.email;
-            name = payload.name || name;
-            avatar = payload.picture || avatar;
-            googleId = payload.sub || googleId;
-            tokenVerified = true;
-          }
-        } else {
-          // Fallback: decode JWT payload safely
-          const parts = String(tokenToVerify).split('.');
-          if (parts.length === 3) {
-            const base64Url = parts[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const decoded = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-            if (decoded.email) {
-              email = decoded.email;
-              name = decoded.name || name;
-              avatar = decoded.picture || avatar;
-              googleId = decoded.sub || googleId;
-              tokenVerified = true;
-            }
-          }
-        }
-      } catch (tokenErr: any) {
-        console.warn('Google token verification warning:', tokenErr.message);
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        tokenVerified: false,
+        message: 'رمز Google (ID Token) مطلوب. لا يمكن تسجيل الدخول بدون تحقق حقيقي من Google.',
+      });
+    }
+
+    const clientId =
+      process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
+
+    // Verify the ID token directly with Google's official token endpoint
+    let payload: any = null;
+    let verifyError: string | null = null;
+
+    try {
+      const verifyRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+      );
+      const data: any = await verifyRes.json().catch(() => null);
+
+      if (!verifyRes.ok || !data || !data.email) {
+        verifyError =
+          data?.error_description || data?.error || 'الرمز غير صالح أو منتهي الصلاحية';
+      } else if (clientId && data.aud !== clientId) {
+        verifyError = 'الرمز صادر لتطبيق آخر (audience mismatch) ولا يمكن اعتماده.';
+      } else if (String(data.email_verified) === 'false') {
+        verifyError = 'بريد Google هذا غير موثّق (email_verified = false).';
+      } else {
+        payload = data;
       }
+    } catch (err: any) {
+      verifyError = err?.message || 'تعذر الاتصال بخادم التحقق من Google';
     }
 
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'البريد الإلكتروني أو رمز Google مطلوب' });
+    if (!payload) {
+      return res.status(401).json({
+        success: false,
+        connected: isConnected,
+        tokenVerified: false,
+        message: `فشل التحقق من حساب Google: ${verifyError}`,
+      });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanEmail = String(payload.email).trim().toLowerCase();
+    const avatar = payload.picture || '';
+    const googleId = payload.sub || null;
+    const verifiedName = payload.name || cleanEmail.split('@')[0];
+
     const AUTHORIZED_ADMIN = 'ahmedmohamed4336@gmail.com';
     const isAuthorizedAdmin = cleanEmail === AUTHORIZED_ADMIN;
     const role = isAuthorizedAdmin ? 'admin' : 'cashier';
@@ -403,9 +423,9 @@ export function createMongoApiRouter() {
       : ['pos', 'tables', 'orders', 'playstation', 'shifts'];
 
     const userDoc = {
-      id: isAuthorizedAdmin ? 'user-admin' : `user-g-${Date.now()}`,
+      id: isAuthorizedAdmin ? 'user-admin' : `user-g-${googleId || Date.now()}`,
       email: cleanEmail,
-      name: name || (isAuthorizedAdmin ? 'أحمد محمد (المدير العام)' : cleanEmail.split('@')[0]),
+      name: verifiedName,
       role,
       avatar: avatar || (isAuthorizedAdmin
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
@@ -414,26 +434,24 @@ export function createMongoApiRouter() {
       pin: isAuthorizedAdmin ? '4336' : '1234',
       permissions,
       authProvider: 'google',
-      googleId: googleId || null,
-      tokenVerified: tokenVerified || false,
+      googleId,
+      tokenVerified: true,
       lastLogin: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // Save to server backup store so user is never lost
-    saveToStore({
-      users: [userDoc]
-    });
+    // Backup store so the user is never lost even if Atlas is unreachable
+    saveToStore({ users: [userDoc] });
 
-    // If MongoDB is connected, upsert into MongoDB Atlas collection 'hub_users'
+    // Upsert into MongoDB Atlas collection 'hub_users'
     if (isConnected && activeClient) {
       try {
         const db = activeClient.db('hub_cafe_db');
         await db.collection('hub_users').updateOne(
           { email: cleanEmail },
-          { 
+          {
             $set: userDoc,
-            $setOnInsert: { createdAt: new Date().toISOString() } 
+            $setOnInsert: { createdAt: new Date().toISOString() },
           },
           { upsert: true }
         );
@@ -443,7 +461,8 @@ export function createMongoApiRouter() {
         return res.json({
           success: true,
           connected: true,
-          tokenVerified,
+          mongoConnected: true,
+          tokenVerified: true,
           message: isAuthorizedAdmin
             ? 'تم التحقق من توكن Google وتحديث بيانات المدير العام في MongoDB Atlas بنجاح (Admin)'
             : 'تم التحقق من توكن Google وحفظ بيانات المستخدم في MongoDB Atlas بنجاح (Cashier)',
@@ -457,10 +476,11 @@ export function createMongoApiRouter() {
     return res.json({
       success: true,
       connected: false,
-      tokenVerified,
+      mongoConnected: false,
+      tokenVerified: true,
       message: isAuthorizedAdmin
-        ? 'تم التحقق من حساب Google واعتماده كمدير عام في السيرفر (Admin)'
-        : 'تم التحقق من حساب Google وحفظ المستخدم في السيرفر (Cashier)',
+        ? 'تم التحقق من حساب Google واعتماده كمدير عام (تعذر الحفظ في Atlas حالياً - تحقق من Network Access)'
+        : 'تم التحقق من حساب Google وحفظ المستخدم في السيرفر (تعذر الحفظ في Atlas حالياً)',
       user: userDoc,
     });
   });

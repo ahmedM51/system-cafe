@@ -114,23 +114,38 @@ export const mongoService = {
   },
 
   /**
-   * Real Google Authentication persisted in MongoDB Atlas with Token Verification
+   * Get client configuration from the backend (Google OAuth Client ID).
    */
-  async authWithGoogle(payload: { 
-    email?: string; 
-    name?: string; 
-    avatar?: string; 
-    googleId?: string;
-    token?: string;
-    credential?: string;
+  async getConfig(): Promise<{ success: boolean; googleClientId: string; googleAuthReady: boolean }> {
+    try {
+      const res = await fetch('/api/mongo/config');
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, googleClientId: '', googleAuthReady: false };
+    }
+  },
+
+  /**
+   * Real Google Authentication persisted in MongoDB Atlas.
+   * Sends the Google ID Token (credential) to the backend for official verification.
+   */
+  async authWithGoogle(payload: {
+    credential: string;
   }): Promise<{ success: boolean; user?: any; tokenVerified?: boolean; message: string }> {
     try {
       const res = await fetch('/api/mongo/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          credential: payload.credential,
+          token: payload.credential,
+        }),
       });
-      return await res.json();
+      const data = await res.json();
+      if (!res.ok && data && typeof data === 'object') {
+        return { ...data, success: false };
+      }
+      return data;
     } catch (err: any) {
       return {
         success: false,
